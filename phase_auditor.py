@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-phase_auditor.py — methodology-v2 v6.13 Phase Audit Engine
+phase_auditor.py — methodology-v2 v6.15 Phase Audit Engine
 ============================================================
 審計者視角：只能存取 GitHub 某個階段的所有產出物，
 對 AI Agent 宣稱通過的 Phase 進行獨立驗證，輸出最終審計報告。
 
 使用方式：
     python phase_auditor.py --repo johnnylugm-tech/tts-kokoro-v613 --phase 1
-    python phase_auditor.py --repo OWNER/REPO --phase 2 --methodology-version v6.13
+    python phase_auditor.py --repo OWNER/REPO --phase 2 --methodology-version v6.15
 
 初始化必要資訊（project_context）：
     --repo          GitHub repo (owner/repo)           [必填]
     --phase         審計階段編號 1-8                    [必填]
     --branch        目標分支 (預設: main)               [選填]
     --project-name  專案顯示名稱                        [選填，自動從 repo 推斷]
-    --methodology-version  v6.13 (預設)                [選填]
+    --methodology-version  v6.15 (預設)                [選填]
 """
 
 import argparse
@@ -30,7 +30,7 @@ from urllib.parse import quote
 
 
 # ─────────────────────────────────────────────
-# 1. METHODOLOGY-V2 v6.13 規則庫（硬編碼，不依賴遠端框架）
+# 1. METHODOLOGY-V2 v6.15 規則庫（硬編碼，不依賴遠端框架）
 # ─────────────────────────────────────────────
 
 HARD_RULES = {
@@ -42,6 +42,10 @@ HARD_RULES = {
     "HR-09": "Claims Verifier 驗證必須通過",
     "HR-10": "sessions_spawn.log 必須存在且有 A/B 記錄",
     "HR-11": "Phase Truth 分數 < 70% 禁止進入下一 Phase",
+    # v6.15 新增: 煞車系統
+    "HR-12": "A/B 審查同一 Phase 超過 5 輪 → 強制 PAUSE，等待人工裁決",
+    "HR-13": "Phase 執行時長超過預估時間的 3 倍 → 強制 checkpoint，PAUSE 等待裁決",
+    "HR-14": "Integrity 分數降至 < 40 → FREEZE 專案，全面審計後才能繼續",
 }
 
 # 每個 Phase 的規格（依 SKILL.md v6.13 Phase 路由表）
@@ -128,8 +132,10 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-10": ("測試通過率", "=100%"),
             "TH-11": ("單元測試覆蓋率", "≥70%"),
+            "TH-16": ("代碼 ↔ SAD 映射率", "=100%"),  # v6.15 新增
         },
         "min_duration_minutes": 30,
+        "check_fr_annotations": True,    # v6.15: @FR annotation 檢查
     },
     4: {
         "name": "測試",
@@ -150,8 +156,10 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-10": ("測試通過率", "=100%"),
             "TH-12": ("單元測試覆蓋率", "≥80%"),
+            "TH-17": ("FR ↔ 測試映射率", "≥90%"),  # v6.15 新增
         },
         "min_duration_minutes": 10,
+        "check_covers_annotations": True,  # v6.15: @covers annotation 檢查
     },
     5: {
         "name": "驗證交付",
@@ -1364,6 +1372,252 @@ class PhaseAuditor:
                 detail=content[:100],
             ))
 
+    # ── C9: Traceability Annotation 覆蓋率 ──────────────
+    def check_c9_traceability_annotations(self):
+        """C9: v6.15 TH-16/TH-17 — @FR/@covers annotation 覆蓋率（Phase 3/4 專用）"""
+        if self.phase == 3:
+            self._check_fr_annotations()
+        elif self.phase == 4:
+            self._check_covers_annotations()
+        else:
+            self.result.add(Finding(
+                check_id="C9",
+                dimension="Traceability Annotation",
+                severity="INFO",
+                title=f"ℹ️ C9 Annotation 檢查不適用於 Phase {self.phase}（僅限 Phase 3/4）",
+                detail="TH-16 (Phase 3) 和 TH-17 (Phase 4) 才需要 @FR/@covers annotation",
+            ))
+
+    def _check_fr_annotations(self):
+        """Phase 3: 掃描 src/ 中 Python/JS 檔案，驗證 @FR annotation 存在"""
+        tree = self.gh.get_tree()
+        src_files = [
+            item["path"] for item in tree
+            if any(item["path"].startswith(pfx) for pfx in ["src/", "app/", "03-development/src/"])
+            and item["path"].endswith((".py", ".ts", ".js"))
+            and not item["path"].endswith(("__init__.py", ".test.py", ".spec.ts"))
+        ]
+        if not src_files:
+            self.result.add(Finding(
+                check_id="C9",
+                dimension="Traceability Annotation",
+                severity="WARNING",
+                title="⚠️ 找不到可掃描的源代碼檔案（src/、app/ 目錄）",
+                detail="TH-16 需要代碼檔案含 @FR annotation，但找不到 .py/.ts/.js 檔案",
+                rule_ref="TH-16",
+            ))
+            return
+
+        sample = src_files[:15]  # 最多掃描 15 個檔案
+        annotated = []
+        missing = []
+        for path in sample:
+            content = self.gh.get_file_content(path)
+            if content and "@FR:" in content:
+                annotated.append(path)
+            elif content:
+                missing.append(path)
+
+        total = len(annotated) + len(missing)
+        rate = len(annotated) / total if total > 0 else 0
+
+        if rate >= 0.9:
+            self.result.add(Finding(
+                check_id="C9",
+                dimension="Traceability Annotation",
+                severity="PASS",
+                title=f"✅ @FR annotation 覆蓋率：{rate:.0%}（{len(annotated)}/{total} 個檔案）",
+                detail=f"TH-16 要求代碼 ↔ SAD 映射（抽樣 {total} 個檔案）",
+                rule_ref="TH-16",
+            ))
+        elif rate >= 0.5:
+            self.result.add(Finding(
+                check_id="C9",
+                dimension="Traceability Annotation",
+                severity="WARNING",
+                title=f"⚠️ @FR annotation 覆蓋率偏低：{rate:.0%}（{len(annotated)}/{total} 個檔案）",
+                detail=f"缺少 @FR 的檔案（前5個）：{missing[:5]}",
+                rule_ref="TH-16",
+            ))
+        else:
+            self.result.add(Finding(
+                check_id="C9",
+                dimension="Traceability Annotation",
+                severity="CRITICAL",
+                title=f"❌ @FR annotation 嚴重不足：{rate:.0%}（{len(annotated)}/{total} 個檔案）",
+                detail=f"v6.15 SKILL.md §Phase 3 要求每個主要類別/函式含 @FR，用於 trace-check TH-16",
+                rule_ref="TH-16",
+            ))
+
+        if missing:
+            self.result.add(Finding(
+                check_id="C9",
+                dimension="Traceability Annotation",
+                severity="INFO",
+                title=f"ℹ️ 缺少 @FR annotation 的檔案（共 {len(missing)} 個）",
+                detail="\n".join(f"  - {p}" for p in missing[:5]),
+            ))
+
+    def _check_covers_annotations(self):
+        """Phase 4: 掃描 tests/ 中測試檔案，驗證 @covers annotation 存在"""
+        tree = self.gh.get_tree()
+        test_files = [
+            item["path"] for item in tree
+            if any(item["path"].startswith(pfx) for pfx in ["tests/", "test/", "04-testing/"])
+            and item["path"].endswith((".py", ".ts", ".js"))
+        ]
+        if not test_files:
+            self.result.add(Finding(
+                check_id="C9",
+                dimension="Traceability Annotation",
+                severity="WARNING",
+                title="⚠️ 找不到測試檔案（tests/、test/ 目錄）",
+                detail="TH-17 需要測試檔案含 @covers annotation",
+                rule_ref="TH-17",
+            ))
+            return
+
+        sample = test_files[:15]
+        annotated = []
+        missing = []
+        for path in sample:
+            content = self.gh.get_file_content(path)
+            if content and "@covers:" in content:
+                annotated.append(path)
+            elif content:
+                missing.append(path)
+
+        total = len(annotated) + len(missing)
+        rate = len(annotated) / total if total > 0 else 0
+
+        if rate >= 0.9:
+            self.result.add(Finding(
+                check_id="C9",
+                dimension="Traceability Annotation",
+                severity="PASS",
+                title=f"✅ @covers annotation 覆蓋率：{rate:.0%}（{len(annotated)}/{total} 個測試檔案）",
+                detail=f"TH-17 要求 FR ↔ 測試映射（抽樣 {total} 個檔案）",
+                rule_ref="TH-17",
+            ))
+        elif rate >= 0.5:
+            self.result.add(Finding(
+                check_id="C9",
+                dimension="Traceability Annotation",
+                severity="WARNING",
+                title=f"⚠️ @covers annotation 覆蓋率偏低：{rate:.0%}（{len(annotated)}/{total} 個測試檔案）",
+                detail=f"缺少 @covers 的測試（前5個）：{missing[:5]}",
+                rule_ref="TH-17",
+            ))
+        else:
+            self.result.add(Finding(
+                check_id="C9",
+                dimension="Traceability Annotation",
+                severity="CRITICAL",
+                title=f"❌ @covers annotation 嚴重不足：{rate:.0%}（{len(annotated)}/{total} 個測試檔案）",
+                detail="v6.15 SKILL.md §Phase 4 要求每個測試函式含 @covers + @type，用於 trace-check TH-17",
+                rule_ref="TH-17",
+            ))
+
+    # ── C10: Runtime Metrics 狀態（v6.15 新增）─────────
+    def check_c10_runtime_metrics(self):
+        """C10: v6.15 — .methodology/state.json 存在且無異常狀態"""
+        content = self._content([".methodology/state.json"])
+        if not content:
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="INFO",
+                title="ℹ️ .methodology/state.json 不存在於 GitHub",
+                detail="v6.15 建議上傳 state.json 以供外部稽核追蹤 Runtime Metrics（HR-12/13/14 觸發紀錄）",
+            ))
+            return
+
+        try:
+            state = json.loads(content)
+        except json.JSONDecodeError:
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="WARNING",
+                title="⚠️ .methodology/state.json 格式無法解析",
+                detail=content[:150],
+            ))
+            return
+
+        phase_state = state.get("phase_state", {})
+        status = phase_state.get("status", "UNKNOWN")
+        ab_rounds = phase_state.get("ab_rounds", 0)
+        blocks = phase_state.get("blocks", 0)
+        integrity = phase_state.get("integrity_score", 100)
+
+        # 狀態健康度
+        if status == "FREEZE":
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="CRITICAL",
+                title=f"❌ Phase 狀態為 FREEZE（HR-14 已觸發）",
+                detail=f"Integrity Score={integrity}，低於 40 閾值，專案已凍結",
+                rule_ref="HR-14",
+            ))
+        elif status == "PAUSE":
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="WARNING",
+                title=f"⚠️ Phase 狀態為 PAUSE（HR-12 或 HR-13 已觸發）",
+                detail=f"ab_rounds={ab_rounds}，等待人工裁決",
+                rule_ref="HR-12",
+            ))
+        elif status in ("RUNNING", "COMPLETED"):
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="PASS",
+                title=f"✅ Runtime Metrics 正常（status={status}）",
+                detail=f"ab_rounds={ab_rounds}, blocks={blocks}, integrity={integrity}",
+            ))
+
+        # HR-12 A/B 輪次預警（5 為強制 PAUSE 閾值）
+        if ab_rounds >= 5:
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="CRITICAL",
+                title=f"❌ A/B 審查輪次達 {ab_rounds} 輪（≥5 觸發 HR-12 PAUSE）",
+                detail="代表審查反覆不通過，需要人工介入確認",
+                rule_ref="HR-12",
+            ))
+        elif ab_rounds >= 3:
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="WARNING",
+                title=f"⚠️ A/B 審查輪次偏高：{ab_rounds} 輪（閾值：5）",
+                detail="建議檢查是否存在系統性問題",
+                rule_ref="HR-12",
+            ))
+
+        # HR-14 Integrity 預警
+        if integrity < 40:
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="CRITICAL",
+                title=f"❌ Integrity Score={integrity} < 40（HR-14 凍結閾值）",
+                detail="專案應被 FREEZE，全面審計後才能繼續",
+                rule_ref="HR-14",
+            ))
+        elif integrity < 60:
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="WARNING",
+                title=f"⚠️ Integrity Score={integrity}，低於 60 預警線",
+                detail="接近 HR-14 凍結閾值（40），建議檢查違規記錄",
+                rule_ref="HR-14",
+            ))
+
     # ── 執行所有檢查 ──────────────────────────────────
     def run_all_checks(self) -> AuditResult:
         print(f"\n{'='*60}")
@@ -1379,6 +1633,8 @@ class PhaseAuditor:
             ("C6 Commit 時間線",        self.check_c6_commit_timeline),
             ("C7 Claims 交叉驗證",      self.check_c7_claims_crosscheck),
             ("C8 Integrity Tracker",   self.check_c8_integrity),
+            ("C9 Traceability Annotation", self.check_c9_traceability_annotations),
+            ("C10 Runtime Metrics",    self.check_c10_runtime_metrics),
         ]
         for name, fn in checks:
             print(f"  → {name}...", end=" ", flush=True)
@@ -1438,7 +1694,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         f"",
         f"> **專案**：{result.repo}  ",
         f"> **審計時間**：{result.audit_time}  ",
-        f"> **方法論版本**：methodology-v2 v6.13  ",
+        f"> **方法論版本**：methodology-v2 v6.15  ",
         f"> **審計工具**：phase_auditor.py  ",
         f"",
         f"---",
@@ -1533,7 +1789,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
     lines += [
         f"",
         f"---",
-        f"*由 phase_auditor.py 自動生成 | methodology-v2 v6.13*",
+        f"*由 phase_auditor.py 自動生成 | methodology-v2 v6.15*",
     ]
 
     return "\n".join(lines)
