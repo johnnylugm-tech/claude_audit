@@ -22,6 +22,12 @@ jobs:
     permissions:
       contents: write
 
+    env:
+      # Use GH_PAT if set, otherwise fall back to the built-in token (works for public repos)
+      GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+      # Opt into Node.js 24 to silence deprecation warnings
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
     steps:
       - name: Checkout claude_audit repo
         uses: actions/checkout@v4
@@ -33,6 +39,7 @@ jobs:
 
       - name: Install gh CLI
         run: |
+          type -p gh >/dev/null 2>&1 && { echo "gh already installed"; gh --version; exit 0; }
           type -p curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl)
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
             sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
@@ -40,8 +47,8 @@ jobs:
             sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
           sudo apt-get update && sudo apt-get install -y gh
 
-      - name: Authenticate gh CLI
-        run: echo "${{ secrets.GH_PAT }}" | gh auth login --with-token
+      - name: Verify gh CLI auth
+        run: gh auth status
 
       - name: Run audit
         id: audit
@@ -61,7 +68,13 @@ jobs:
           if git diff --cached --quiet; then
             echo "No new report to commit."
           else
-            VERDICT=$(grep "裁決" reports/**/**/**/**/*.md 2>/dev/null | tail -1 | sed 's/.*\*\*\(.*\)\*\*.*/\1/' || echo "unknown")
+            # Safely extract verdict without glob expansion issues
+            REPORT_FILE=$(find reports/ -name "*.md" -newer audit.sh 2>/dev/null | sort | tail -1)
+            if [ -n "$REPORT_FILE" ]; then
+              VERDICT=$(grep "裁決" "$REPORT_FILE" | tail -1 | sed 's/.*\*\*\(.*\)\*\*.*/\1/' || echo "unknown")
+            else
+              VERDICT="unknown"
+            fi
             git commit -m "audit: ${{ github.event.inputs.repo }} phase ${{ github.event.inputs.phase }} (${{ github.event.inputs.branch }}) — ${VERDICT}"
             git push
           fi
