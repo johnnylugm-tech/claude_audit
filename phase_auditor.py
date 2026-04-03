@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-phase_auditor.py — methodology-v2 v6.15 Phase Audit Engine
+phase_auditor.py — methodology-v2 v6.21 Phase Audit Engine
 ============================================================
 審計者視角：只能存取 GitHub 某個階段的所有產出物，
 對 AI Agent 宣稱通過的 Phase 進行獨立驗證，輸出最終審計報告。
 
 使用方式：
     python phase_auditor.py --repo johnnylugm-tech/tts-kokoro-v613 --phase 1
-    python phase_auditor.py --repo OWNER/REPO --phase 2 --methodology-version v6.15
+    python phase_auditor.py --repo OWNER/REPO --phase 2 --methodology-version v6.21
 
 初始化必要資訊（project_context）：
     --repo          GitHub repo (owner/repo)           [必填]
     --phase         審計階段編號 1-8                    [必填]
     --branch        目標分支 (預設: main)               [選填]
     --project-name  專案顯示名稱                        [選填，自動從 repo 推斷]
-    --methodology-version  v6.15 (預設)                [選填]
+    --methodology-version  v6.21 (預設)                [選填]
 """
 
 import argparse
@@ -30,7 +30,7 @@ from urllib.parse import quote
 
 
 # ─────────────────────────────────────────────
-# 1. METHODOLOGY-V2 v6.15 規則庫（硬編碼，不依賴遠端框架）
+# 1. METHODOLOGY-V2 v6.21 規則庫（硬編碼，不依賴遠端框架）
 # ─────────────────────────────────────────────
 
 HARD_RULES = {
@@ -48,7 +48,16 @@ HARD_RULES = {
     "HR-14": "Integrity 分數降至 < 40 → FREEZE 專案，全面審計後才能繼續",
 }
 
-# 每個 Phase 的規格（依 SKILL.md v6.13 Phase 路由表）
+# v6.21 新增: 負面約束違規扣分（Integrity Tracker 補充項）
+NEGATIVE_CONSTRAINTS = {
+    "unable_to_proceed_no_reason": ("回傳 unable_to_proceed 但未說明原因", -15),
+    "fabricated_content": ("嘗試編造無法完成的內容", -20),
+    "ellipsis_in_code": ("程式碼中使用省略號 ... 代替實際實作", -10),
+    "missing_summary": ("Agent 回傳缺少 50 字內摘要（Phase 3+）", -10),
+    "missing_confidence": ("Agent 回傳缺少 confidence 1-10 自評分", -5),
+}
+
+# 每個 Phase 的規格（依 SKILL.md v6.21 Phase 路由表）
 PHASE_SPEC = {
     1: {
         "name": "需求規格",
@@ -256,6 +265,7 @@ QG_EVIDENCE_PATTERNS = [
     r"phase.verify.*?(?:PASS|FAIL|[\d]+%)",
     r"enforce.*?(?:BLOCK|PASS|0.*?違規)",
     r"Constitution Score.*?[\d.]+",
+    r"(?:Verify_Agent|verify_agent|Verifier|第三方驗證).*?(?:PASS|FAIL|完成|執行)",  # v6.21
 ]
 
 # DEVELOPMENT_LOG 假通過偵測（禁止只出現這些空泛標記）
@@ -264,12 +274,18 @@ FAKE_PASS_PATTERNS = [
     r"^[✅✓]\s*Phase\s*\d+\s*(?:完成|PASS|通過)\s*$",
 ]
 
-# STAGE_PASS 必要章節（與 stage_pass_generator.py 输出一致）
+# STAGE_PASS 必要章節（與 stage_pass_generator.py 輸出一致，v6.21 新增 confidence/summary）
 STAGE_PASS_REQUIRED_SECTIONS = [
     "階段目標達成",
     "Agent B",
     "Agent B 審查",
     "SIGN-OFF",
+]
+
+# v6.21 新增: STAGE_PASS 結構化欄位（Agent 回傳格式規範）
+STAGE_PASS_STRUCTURED_FIELDS = [
+    "confidence",   # 1-10 自評分
+    "summary",      # 50字內摘要
 ]
 
 # STAGE_PASS Agent B 必要關鍵字
@@ -1618,6 +1634,80 @@ class PhaseAuditor:
                 rule_ref="HR-14",
             ))
 
+    # ── C11: Verify_Agent 執行記錄（v6.21 新增）──────────
+    def check_c11_verify_agent(self):
+        """C11: v6.21 — Phase 3+ 必須有 Verify_Agent 第三方驗證記錄"""
+        if self.phase < 3:
+            self.result.add(Finding(
+                check_id="C11",
+                dimension="Verify_Agent 記錄",
+                severity="INFO",
+                title=f"ℹ️ C11 Verify_Agent 檢查不適用於 Phase {self.phase}（僅限 Phase 3+）",
+                detail="Verify_Agent 在 Phase 3+ 且 Agent B < 80 或 Agent A 自評差異 > 20 時觸發",
+            ))
+            return
+
+        # 搜尋 DEVELOPMENT_LOG 和 STAGE_PASS 中的 Verify_Agent 記錄
+        verify_keywords = re.compile(
+            r"Verify_Agent|verify_agent|Verifier|VERIFIER|第三方驗證",
+            re.IGNORECASE
+        )
+
+        dev_content = self._content(["DEVELOPMENT_LOG.md"]) or ""
+
+        # 找到當前 Phase 的 STAGE_PASS 內容
+        phase_patterns = [f"Phase{self.phase}_", f"Phase_{self.phase}_", f"Phase_{self.phase}-"]
+        sp_paths = sorted([
+            item["path"] for item in self.gh.get_tree()
+            if any(pat in item["path"] for pat in phase_patterns)
+            and "STAGE_PASS" in item["path"]
+        ], key=lambda p: -len(p))
+        sp_content = self.gh.get_file_content(sp_paths[0]) if sp_paths else ""
+
+        combined = (dev_content or "") + (sp_content or "")
+        found = bool(verify_keywords.search(combined))
+
+        if found:
+            match = verify_keywords.search(combined)
+            self.result.add(Finding(
+                check_id="C11",
+                dimension="Verify_Agent 記錄",
+                severity="PASS",
+                title="✅ 找到 Verify_Agent 第三方驗證記錄",
+                detail=f"關鍵字：{match.group(0) if match else 'Verify_Agent'}（符合 v6.21 §Verify_Agent 流程）",
+            ))
+        else:
+            self.result.add(Finding(
+                check_id="C11",
+                dimension="Verify_Agent 記錄",
+                severity="WARNING",
+                title=f"⚠️ Phase {self.phase} 未找到 Verify_Agent 執行記錄",
+                detail="v6.21 SKILL.md 要求 Phase 3+ 在 Agent B < 80 或自評差異 > 20 時觸發 Verify_Agent；"
+                       "即使未觸發，建議在 DEVELOPMENT_LOG 中記錄「未觸發原因」",
+            ))
+
+        # v6.21 額外檢查：STAGE_PASS 是否包含 confidence 和 summary 結構化欄位
+        if sp_content:
+            missing_fields = [
+                f for f in STAGE_PASS_STRUCTURED_FIELDS if f not in sp_content
+            ]
+            if missing_fields:
+                self.result.add(Finding(
+                    check_id="C11",
+                    dimension="Verify_Agent 記錄",
+                    severity="WARNING",
+                    title=f"⚠️ STAGE_PASS 缺少 v6.21 結構化欄位：{', '.join(missing_fields)}",
+                    detail="v6.21 要求 Agent 回傳包含 confidence（1-10）和 summary（50字內摘要）",
+                ))
+            else:
+                self.result.add(Finding(
+                    check_id="C11",
+                    dimension="Verify_Agent 記錄",
+                    severity="PASS",
+                    title="✅ STAGE_PASS 包含 v6.21 結構化欄位（confidence + summary）",
+                    detail="",
+                ))
+
     # ── 執行所有檢查 ──────────────────────────────────
     def run_all_checks(self) -> AuditResult:
         print(f"\n{'='*60}")
@@ -1635,6 +1725,7 @@ class PhaseAuditor:
             ("C8 Integrity Tracker",   self.check_c8_integrity),
             ("C9 Traceability Annotation", self.check_c9_traceability_annotations),
             ("C10 Runtime Metrics",    self.check_c10_runtime_metrics),
+            ("C11 Verify_Agent 記錄",  self.check_c11_verify_agent),
         ]
         for name, fn in checks:
             print(f"  → {name}...", end=" ", flush=True)
@@ -1694,7 +1785,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         f"",
         f"> **專案**：{result.repo}  ",
         f"> **審計時間**：{result.audit_time}  ",
-        f"> **方法論版本**：methodology-v2 v6.15  ",
+        f"> **方法論版本**：methodology-v2 v6.21  ",
         f"> **審計工具**：phase_auditor.py  ",
         f"",
         f"---",
@@ -1789,7 +1880,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
     lines += [
         f"",
         f"---",
-        f"*由 phase_auditor.py 自動生成 | methodology-v2 v6.15*",
+        f"*由 phase_auditor.py 自動生成 | methodology-v2 v6.21*",
     ]
 
     return "\n".join(lines)
@@ -1818,7 +1909,7 @@ def main():
 
   無需提供（工具自動偵測）：
     - methodology 版本（從 STAGE_PASS 或 DEVELOPMENT_LOG 自動偵測）
-    - Phase 規格（內建 SKILL.md v6.13 規則庫）
+    - Phase 規格（內建 SKILL.md v6.21 規則庫）
     - 文件路徑（支援多種命名慣例自動解析）
 
 使用範例：
