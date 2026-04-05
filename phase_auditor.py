@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-phase_auditor.py — methodology-v2 v6.21 Phase Audit Engine
+phase_auditor.py — methodology-v2 v6.54 Phase Audit Engine
 ============================================================
 審計者視角：只能存取 GitHub 某個階段的所有產出物，
 對 AI Agent 宣稱通過的 Phase 進行獨立驗證，輸出最終審計報告。
 
 使用方式：
     python phase_auditor.py --repo johnnylugm-tech/tts-kokoro-v613 --phase 1
-    python phase_auditor.py --repo OWNER/REPO --phase 2 --methodology-version v6.21
+    python phase_auditor.py --repo OWNER/REPO --phase 2 --methodology-version v6.54
 
 初始化必要資訊（project_context）：
     --repo          GitHub repo (owner/repo)           [必填]
     --phase         審計階段編號 1-8                    [必填]
     --branch        目標分支 (預設: main)               [選填]
     --project-name  專案顯示名稱                        [選填，自動從 repo 推斷]
-    --methodology-version  v6.21 (預設)                [選填]
+    --methodology-version  v6.54 (預設)                [選填]
 """
 
 import argparse
@@ -30,7 +30,7 @@ from urllib.parse import quote
 
 
 # ─────────────────────────────────────────────
-# 1. METHODOLOGY-V2 v6.21 規則庫（硬編碼，不依賴遠端框架）
+# 1. METHODOLOGY-V2 v6.54 規則庫（硬編碼，不依賴遠端框架）
 # ─────────────────────────────────────────────
 
 HARD_RULES = {
@@ -46,6 +46,8 @@ HARD_RULES = {
     "HR-12": "A/B 審查同一 Phase 超過 5 輪 → 強制 PAUSE，等待人工裁決",
     "HR-13": "Phase 執行時長超過預估時間的 3 倍 → 強制 checkpoint，PAUSE 等待裁決",
     "HR-14": "Integrity 分數降至 < 40 → FREEZE 專案，全面審計後才能繼續",
+    # v6.54 新增
+    "HR-15": "citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
 }
 
 # v6.21 新增: 負面約束違規扣分（Integrity Tracker 補充項）
@@ -57,7 +59,7 @@ NEGATIVE_CONSTRAINTS = {
     "missing_confidence": ("Agent 回傳缺少 confidence 1-10 自評分", -5),
 }
 
-# 每個 Phase 的規格（依 SKILL.md v6.21 Phase 路由表）
+# 每個 Phase 的規格（依 SKILL.md v6.54 Phase 路由表）
 PHASE_SPEC = {
     1: {
         "name": "需求規格",
@@ -861,7 +863,8 @@ class PhaseAuditor:
                 dimension="DEVELOPMENT_LOG 品質",
                 severity="WARNING",
                 title=f"⚠️ 偵測到 {len(fake_lines)} 行疑似空泛通過標記",
-                detail="\n".join(fake_lines[:3]),
+                detail="\
+".join(fake_lines[:3]),
                 evidence="SKILL.md 禁止只寫「✅ 已通過」而無實際命令輸出",
             ))
 
@@ -1183,7 +1186,8 @@ class PhaseAuditor:
             dimension="Commit 時間線",
             severity="INFO",
             title=f"ℹ️ 找到 {len(phase_commits)} 個 Phase {self.phase} 相關 commit",
-            detail="\n".join([
+            detail="\
+".join([
                 f"  {c['sha'][:7]} {c['commit']['author']['date'][:16]} "
                 f"| {c['commit']['message'][:60]}"
                 for c in phase_commits[:5]
@@ -1232,7 +1236,8 @@ class PhaseAuditor:
                 dimension="Commit 時間線",
                 severity="INFO",
                 title=f"ℹ️ 有 {len(fix_commits)} 個修復 commit（顯示迭代過程，屬正常）",
-                detail="\n".join([
+                detail="\
+".join([
                     f"  {c['sha'][:7]}: {c['commit']['message'][:60]}"
                     for c in fix_commits[:3]
                 ]),
@@ -1265,7 +1270,8 @@ class PhaseAuditor:
             # 優先匹配 "Constitution Score: ✅ 85.7%" 或 "Constitution Score: 85.7%"
             r"Constitution\s+Score.*?([\d.]+)%",
             # 備用：只有 "Constitution" 開頭的行（但排除「信心分數」）
-            r"(?:^|\n)Constitution[^信心].*?([\d.]+)%",
+            r"(?:^|\
+)Constitution[^信心].*?([\d.]+)%",
         ]:
             m = re.search(pat, sp_content, re.IGNORECASE | re.MULTILINE)
             if m:
@@ -1279,7 +1285,8 @@ class PhaseAuditor:
         const_log = None
         for pat in [
             r"Constitution\s+Score.*?([\d.]+)%",
-            r"(?:^|\n)Constitution[^信心].*?([\d.]+)%",
+            r"(?:^|\
+)Constitution[^信心].*?([\d.]+)%",
         ]:
             m = re.search(pat, dev_content, re.IGNORECASE | re.MULTILINE)
             if m:
@@ -1313,7 +1320,7 @@ class PhaseAuditor:
                 check_id="C7",
                 dimension="Claims 交叉驗證",
                 severity="INFO",
-                title=f"ℹ️ STAGE_PASS 聲稱 Constitution={const_claimed}%，但 DEVELOPMENT_LOG 找不到對應數值",
+                title=f"ℹ️ STAGE_PASS 聲稱 Constitution={const_claimed}%，但 DEVELOPMENT_LOG 找不到對���數值",
                 detail="無法做交叉驗證",
             ))
 
@@ -1374,7 +1381,8 @@ class PhaseAuditor:
                     dimension="Integrity Tracker",
                     severity="WARNING",
                     title=f"⚠️ Integrity 違規記錄：",
-                    detail="\n".join([
+                    detail="\
+".join([
                         f"  - {v.get('type','?')}: {v.get('details','')[:60]}"
                         for v in violations[:5]
                     ]),
@@ -1471,7 +1479,8 @@ class PhaseAuditor:
                 dimension="Traceability Annotation",
                 severity="INFO",
                 title=f"ℹ️ 缺少 @FR annotation 的檔案（共 {len(missing)} 個）",
-                detail="\n".join(f"  - {p}" for p in missing[:5]),
+                detail="\
+".join(f"  - {p}" for p in missing[:5]),
             ))
 
     def _check_covers_annotations(self):
@@ -1634,6 +1643,29 @@ class PhaseAuditor:
                 rule_ref="HR-14",
             ))
 
+        # v6.54 新增: HR-13 煞車狀態檢查
+        hr13_triggered = state.get("hr13_triggered", False)
+        hr13_remaining = state.get("hr13_remaining_minutes")
+        estimated = state.get("estimated_minutes")
+        start_time = state.get("start_time")
+        if hr13_triggered:
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="WARNING",
+                title=f"⚠️ HR-13 已觸發：Phase 執行時間超過預估 ×3",
+                detail=f"預估={estimated}min，剩餘={hr13_remaining}min，開始時間={start_time}",
+                rule_ref="HR-13",
+            ))
+        elif estimated:
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="PASS",
+                title=f"✅ HR-13 煞車未觸發（預估={estimated}min）",
+                detail=f"start_time={start_time}",
+            ))
+
     # ── C11: Verify_Agent 執行記錄（v6.21 新增）──────────
     def check_c11_verify_agent(self):
         """C11: v6.21 — Phase 3+ 必須有 Verify_Agent 第三方驗證記錄"""
@@ -1710,7 +1742,8 @@ class PhaseAuditor:
 
     # ── 執行所有檢查 ──────────────────────────────────
     def run_all_checks(self) -> AuditResult:
-        print(f"\n{'='*60}")
+        print(f"\
+{'='*60}")
         print(f"🔍 審計 {self.gh.repo} — Phase {self.phase}: {self.spec.get('name','')}")
         print(f"{'='*60}")
 
@@ -1726,6 +1759,7 @@ class PhaseAuditor:
             ("C9 Traceability Annotation", self.check_c9_traceability_annotations),
             ("C10 Runtime Metrics",    self.check_c10_runtime_metrics),
             ("C11 Verify_Agent 記錄",  self.check_c11_verify_agent),
+            ("C12 Citations HR-15",     self.check_c12_citations_quality),
         ]
         for name, fn in checks:
             print(f"  → {name}...", end=" ", flush=True)
@@ -1880,10 +1914,11 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
     lines += [
         f"",
         f"---",
-        f"*由 phase_auditor.py 自動生成 | methodology-v2 v6.21*",
+        f"*由 phase_auditor.py 自動生成 | methodology-v2 v6.54*",
     ]
 
-    return "\n".join(lines)
+    return "\
+".join(lines)
 
 
 # ─────────────────────────────────────────────
@@ -1974,9 +2009,11 @@ def main():
     if args.save:
         with open(args.save, "w", encoding="utf-8") as fp:
             fp.write(output)
-        print(f"\n📄 報告已儲存至：{args.save}")
+        print(f"\
+📄 報告已儲存至：{args.save}")
     else:
-        print("\n" + output)
+        print("\
+" + output)
 
     # Exit code
     exit_codes = {"PASS": 0, "CONDITIONAL_PASS": 1, "FAIL": 2}
