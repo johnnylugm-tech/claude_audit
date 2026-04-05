@@ -356,6 +356,7 @@ class GitHubFetcher:
             capture_output=True, text=True
         )
         if result.returncode != 0:
+            print(f"[gh api] {endpoint} failed: {result.stderr.strip()}", file=sys.stderr)
             return None
         try:
             return json.loads(result.stdout)
@@ -493,14 +494,10 @@ class PhaseAuditor:
         # 匹配：
         #   - Phase2_STAGE_PASS.md (Phase + number + underscore)
         #   - Phase_2_-_架構設計_STAGE_PASS.md (Phase + underscore + number + underscore + text)
-        phase_patterns = [
-            f"Phase{self.phase}_",      # Phase2_
-            f"Phase_{self.phase}_",      # Phase_2_ (Chinese format)
-            f"Phase_{self.phase}-",      # Phase_2- (variant)
-        ]
+        _p = str(self.phase)
         tree_paths = [
             item["path"] for item in self.gh.get_tree()
-            if any(pat in item["path"] for pat in phase_patterns)
+            if re.search(rf"Phase{_p}[^0-9]|Phase_{_p}[^0-9]", item["path"])
             and "STAGE_PASS" in item["path"]
         ]
         # 優先選擇中文格式（路徑較長）
@@ -713,9 +710,6 @@ class PhaseAuditor:
 
         # Session ID 唯一性
         if len(session_ids) >= 2:
-            all_unique = len(session_ids) == len([
-                s for s in sessions if isinstance(s, dict) and s.get("session_id")
-            ])
             self.result.add(Finding(
                 check_id="C3",
                 dimension="A/B Session 分離",
@@ -1944,7 +1938,7 @@ def main():
 
   無需提供（工具自動偵測）：
     - methodology 版本（從 STAGE_PASS 或 DEVELOPMENT_LOG 自動偵測）
-    - Phase 規格（內建 SKILL.md v6.21 規則庫）
+    - Phase 規格（內建 SKILL.md v6.54 規則庫）
     - 文件路徑（支援多種命名慣例自動解析）
 
 使用範例：
