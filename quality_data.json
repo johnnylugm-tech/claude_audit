@@ -1,0 +1,450 @@
+{
+  "iterations": [
+    {
+      "iteration": 1,
+      "timestamp": "2026-04-09T22:08:22.400052",
+      "debt_score": 90
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2026-04-09T22:08:22.404330",
+      "debt_score": 70
+    },
+    {
+      "iteration": 3,
+      "timestamp": "2026-04-09T22:08:22.408598",
+      "debt_score": 60
+    },
+    {
+      "iteration": 4,
+      "timestamp": "2026-04-09T22:08:22.416821",
+      "debt_score": 40
+    },
+    {
+      "iteration": 5,
+      "timestamp": "2026-04-09T22:08:22.421671",
+      "debt_score": 30
+    },
+    {
+      "iteration": 0,
+      "timestamp": "2026-04-09T22:13:39.949415",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 1,
+      "timestamp": "2026-04-09T22:13:39.979947",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2026-04-09T22:13:39.995970",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 3,
+      "timestamp": "2026-04-09T22:13:40.008370",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 0,
+      "timestamp": "2026-04-09T22:13:51.850811",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 1,
+      "timestamp": "2026-04-09T22:13:51.875374",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2026-04-09T22:13:51.888930",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 3,
+      "timestamp": "2026-04-09T22:13:51.901270",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 0,
+      "timestamp": "2026-04-09T22:16:28.958610",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 1,
+      "timestamp": "2026-04-09T22:16:28.974824",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2026-04-09T22:16:28.990393",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 3,
+      "timestamp": "2026-04-09T22:16:29.007363",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 4,
+      "timestamp": "2026-04-09T22:16:29.038289",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 5,
+      "timestamp": "2026-04-09T22:16:29.052605",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 6,
+      "timestamp": "2026-04-09T22:16:29.069270",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 7,
+      "timestamp": "2026-04-09T22:16:29.092802",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 8,
+      "timestamp": "2026-04-09T22:16:29.105564",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 9,
+      "timestamp": "2026-04-09T22:16:29.118498",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 10,
+      "timestamp": "2026-04-09T22:16:29.131795",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 11,
+      "timestamp": "2026-04-09T22:16:29.156437",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 12,
+      "timestamp": "2026-04-09T22:16:29.177539",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 13,
+      "timestamp": "2026-04-09T22:16:29.191559",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 14,
+      "timestamp": "2026-04-09T22:16:29.231442",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 15,
+      "timestamp": "2026-04-09T22:16:29.249436",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 16,
+      "timestamp": "2026-04-09T22:16:29.266951",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 17,
+      "timestamp": "2026-04-09T22:16:29.288654",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 18,
+      "timestamp": "2026-04-09T22:16:29.306362",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 19,
+      "timestamp": "2026-04-09T22:16:29.323255",
+      "debt_score": 75.0
+    },
+    {
+      "iteration": 20,
+      "timestamp": "2026-04-09T22:16:29.346341",
+      "debt_score": 75.0
+    }
+  ],
+  "modules": {
+    "phase_auditor.py": {
+      "issues": 12,
+      "complexity": 8,
+      "debt": 15,
+      "hotspot_score": 11.4
+    },
+    "audit.sh": {
+      "issues": 5,
+      "complexity": 3,
+      "debt": 8,
+      "hotspot_score": 5.0
+    },
+    "config.py": {
+      "issues": 2,
+      "complexity": 1,
+      "debt": 3,
+      "hotspot_score": 1.9000000000000001
+    },
+    "utils.py": {
+      "issues": 8,
+      "complexity": 6,
+      "debt": 10,
+      "hotspot_score": 7.8
+    }
+  },
+  "evolutions": [
+    {
+      "iteration": 1,
+      "timestamp": "2026-04-09T22:08:22.442471",
+      "category": "File Handling",
+      "before": "Manual file close: file.close()",
+      "after": "Context manager: with open() as f:",
+      "description": "Replaced manual file closing with context managers"
+    },
+    {
+      "iteration": 1,
+      "timestamp": "2026-04-09T22:08:22.446262",
+      "category": "Error Handling",
+      "before": "Silent exception: except: pass",
+      "after": "Proper logging: except Exception as e: log.error(e)",
+      "description": "Added proper error handling with logging"
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2026-04-09T22:08:22.450227",
+      "category": "Type Safety",
+      "before": "Implicit any: def parse(data)",
+      "after": "Type hints: def parse(data: dict) -> list:",
+      "description": "Added type annotations to function signatures"
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2026-04-09T22:08:22.454510",
+      "category": "Code Structure",
+      "before": "Long function: def process() with 100 lines",
+      "after": "Split into: def validate(), def transform(), def output()",
+      "description": "Split large functions into smaller, focused functions"
+    },
+    {
+      "iteration": 3,
+      "timestamp": "2026-04-09T22:08:22.458929",
+      "category": "Testing",
+      "before": "No tests: pass",
+      "after": "pytest unit tests with assertions",
+      "description": "Added comprehensive test coverage"
+    },
+    {
+      "iteration": 1,
+      "timestamp": "2026-04-09T22:13:39.957801",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2026-04-09T22:13:39.989348",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 3,
+      "timestamp": "2026-04-09T22:13:40.002568",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 1,
+      "timestamp": "2026-04-09T22:13:51.868297",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2026-04-09T22:13:51.881987",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 3,
+      "timestamp": "2026-04-09T22:13:51.895442",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 1,
+      "timestamp": "2026-04-09T22:16:28.966031",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 2,
+      "timestamp": "2026-04-09T22:16:28.984020",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 3,
+      "timestamp": "2026-04-09T22:16:29.000028",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 4,
+      "timestamp": "2026-04-09T22:16:29.014236",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 5,
+      "timestamp": "2026-04-09T22:16:29.046447",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 6,
+      "timestamp": "2026-04-09T22:16:29.063080",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 7,
+      "timestamp": "2026-04-09T22:16:29.086561",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 8,
+      "timestamp": "2026-04-09T22:16:29.099450",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 9,
+      "timestamp": "2026-04-09T22:16:29.112518",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 10,
+      "timestamp": "2026-04-09T22:16:29.125055",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 11,
+      "timestamp": "2026-04-09T22:16:29.147165",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 12,
+      "timestamp": "2026-04-09T22:16:29.170469",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 13,
+      "timestamp": "2026-04-09T22:16:29.184926",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 14,
+      "timestamp": "2026-04-09T22:16:29.217993",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 15,
+      "timestamp": "2026-04-09T22:16:29.242203",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 16,
+      "timestamp": "2026-04-09T22:16:29.258051",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 17,
+      "timestamp": "2026-04-09T22:16:29.277664",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 18,
+      "timestamp": "2026-04-09T22:16:29.297077",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 19,
+      "timestamp": "2026-04-09T22:16:29.314345",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    },
+    {
+      "iteration": 20,
+      "timestamp": "2026-04-09T22:16:29.333641",
+      "before": "No test_coverage",
+      "after": "Optimized test_coverage",
+      "category": "Test_Coverage",
+      "description": "Add unit tests"
+    }
+  ]
+}

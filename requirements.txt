@@ -1,0 +1,7 @@
+# Quality Dashboard Dependencies
+# (Minimal dependencies - mostly uses standard library)
+
+# No external dependencies required for basic dashboard
+# Optional: for enhanced visualization
+# matplotlib>=3.5.0
+# plotly>=5.0.0
