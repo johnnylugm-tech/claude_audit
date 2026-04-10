@@ -407,7 +407,7 @@ class GitHubFetcher:
         if path in self._file_cache:
             return self._file_cache[path]
         data = self._gh(
-            f"repos/{self.repo}/contents/{quote(path, safe='/')}"
+            f"repos/{self.repo}/contents/{quote(path, safe='/')}?ref={self.branch}"
         )
         if not data or "content" not in data:
             self._file_cache[path] = None
@@ -594,7 +594,7 @@ class PhaseAuditor:
         # 2c. 信心分數（支援多種格式）
         score_match = re.search(r"[*_]*信心分數[*_]*[：:]+\s*(\d+)/100", content)
         if not score_match:
-            score_match = re.search(r"(\d{2,3})/100", content)
+            score_match = re.search(r"(?:分數|score|confidence)[^:\n]*?(\d{1,3})/100", content, re.IGNORECASE)
         if score_match:
             score = int(score_match.group(1))
             sev = "PASS" if score >= 70 else ("WARNING" if score >= 50 else "CRITICAL")
@@ -1195,10 +1195,10 @@ class PhaseAuditor:
             dimension="Commit 時間線",
             severity="INFO",
             title=f"ℹ️ 找到 {len(phase_commits)} 個 Phase {self.phase} 相關 commit",
-            detail="\
-".join([
-                f"  {c['sha'][:7]} {c['commit']['author']['date'][:16]} "
-                f"| {c['commit']['message'][:60]}"
+            detail="\n".join([
+                f"  {c.get('sha','?')[:7]} "
+                f"{c.get('commit',{}).get('author',{}).get('date','?')[:16]} "
+                f"| {c.get('commit',{}).get('message','')[:60]}"
                 for c in phase_commits[:5]
             ]),
         ))
@@ -1245,9 +1245,8 @@ class PhaseAuditor:
                 dimension="Commit 時間線",
                 severity="INFO",
                 title=f"ℹ️ 有 {len(fix_commits)} 個修復 commit（顯示迭代過程，屬正常）",
-                detail="\
-".join([
-                    f"  {c['sha'][:7]}: {c['commit']['message'][:60]}"
+                detail="\n".join([
+                    f"  {c.get('sha','?')[:7]}: {c.get('commit',{}).get('message','')[:60]}"
                     for c in fix_commits[:3]
                 ]),
             ))
@@ -1611,6 +1610,14 @@ class PhaseAuditor:
                 title=f"✅ Runtime Metrics 正常（status={status}）",
                 detail=f"ab_rounds={ab_rounds}, blocks={blocks}, integrity={integrity}",
             ))
+        else:
+            self.result.add(Finding(
+                check_id="C10",
+                dimension="Runtime Metrics",
+                severity="WARNING",
+                title=f"⚠️ 未知 Phase 狀態：{status}",
+                detail="預期值：RUNNING, COMPLETED, PAUSE, FREEZE",
+            ))
 
         # HR-12 A/B 輪次預警（5 為強制 PAUSE 閾值）
         if ab_rounds >= 5:
@@ -1874,12 +1881,21 @@ class PhaseAuditor:
         dev_content = self._content(["DEVELOPMENT_LOG.md"]) or ""
 
         # 搜集 Phase 相關的所有 .py 檔案（若有）
-        phase_patterns = [f"Phase{self.phase}", f"Phase_{self.phase}", f"phase{self.phase}"]
-        code_files = [
-            item["path"] for item in self.gh.get_files()
-            if item["path"].endswith(".py")
-            and any(pat.lower() in item["path"].lower() for pat in phase_patterns)
-        ]
+        # Phase 3 (實作階段) 特別掃描 src/app/03-development 下的檔案
+        if self.phase == 3:
+            code_prefixes = ["src/", "app/", "03-development/", "03-implementation/"]
+            code_files = [
+                item["path"] for item in self.gh.get_files()
+                if item["path"].endswith(".py")
+                and any(item["path"].startswith(pfx) for pfx in code_prefixes)
+            ]
+        else:
+            phase_patterns = [f"Phase{self.phase}", f"Phase_{self.phase}", f"phase{self.phase}"]
+            code_files = [
+                item["path"] for item in self.gh.get_files()
+                if item["path"].endswith(".py")
+                and any(pat.lower() in item["path"].lower() for pat in phase_patterns)
+            ]
 
         violations = []
 
@@ -1899,7 +1915,7 @@ class PhaseAuditor:
         )
         fab_matches = fabrication_indicators.findall(dev_content)
         if fab_matches:
-            violations.append(f"fabricated_content 疑慮: DEVELOPMENT_LOG 含 {len(fab_matches)} 處可疑標記")
+            violations.append(f"fabricated_content: DEVELOPMENT_LOG 含 {len(fab_matches)} 處可疑標記")
 
         # 3. 檢查 subagent_inheriting_context（v7.5 新增）
         inherit_pattern = re.compile(
@@ -1989,10 +2005,15 @@ class PhaseAuditor:
             return
 
         dev_content = self._content(["DEVELOPMENT_LOG.md"]) or ""
-        sp_content = self._content([
-            f"00-summary/Phase{self.phase}_STAGE_PASS.md",
-            f"Phase{self.phase}_STAGE_PASS.md",
-        ]) or ""
+
+        # 使用樹掃描尋找 STAGE_PASS（與 C2/C7/C11/C12 一致）
+        _p = str(self.phase)
+        sp_paths = sorted([
+            item["path"] for item in self.gh.get_files()
+            if re.search(rf"Phase{_p}[^0-9]|Phase_{_p}[^0-9]", item["path"])
+            and "STAGE_PASS" in item["path"]
+        ], key=lambda p: -len(p))
+        sp_content = (self.gh.get_file_content(sp_paths[0]) if sp_paths else None) or ""
 
         combined = dev_content + "\n" + sp_content
 
@@ -2069,8 +2090,13 @@ class PhaseAuditor:
 
         total = criticals + warnings + passes
         if total == 0:
-            self.result.score = 0
-            self.result.verdict = "FAIL"
+            info_count = len([f for f in findings if f.severity == "INFO"])
+            if info_count > 0:
+                self.result.score = 50
+                self.result.verdict = "CONDITIONAL_PASS"
+            else:
+                self.result.score = 0
+                self.result.verdict = "FAIL"
             return
 
         # 加權分數：PASS=1分, WARNING=-0.3分, CRITICAL=-1.5分（相對於通過基準）
@@ -2167,9 +2193,6 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         lines.append(f"### {dim_icon} {dim}")
         lines.append(f"")
         for f in dim_findings:
-            sev_icon = {
-                "CRITICAL": "🔴", "WARNING": "🟡", "PASS": "✅", "INFO": "ℹ️"
-            }.get(f.severity, "❓")
             lines.append(f"- {f.title}")
             if f.detail and f.severity != "PASS":
                 for detail_line in f.detail.splitlines():
@@ -2183,11 +2206,11 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
             f"",
         ]
         for i, f in enumerate(criticals, 1):
-            lines.append(f"{i}. **[CRITICAL]** {f.title.lstrip('❌ ')}")
+            lines.append(f"{i}. **[CRITICAL]** {f.title.removeprefix('❌ ')}")
             if f.detail and f.detail.splitlines():
                 lines.append(f"   - {f.detail.splitlines()[0]}")
         for i, f in enumerate(warnings, len(criticals) + 1):
-            lines.append(f"{i}. **[WARNING]** {f.title.lstrip('⚠️ ')}")
+            lines.append(f"{i}. **[WARNING]** {f.title.removeprefix('⚠️ ')}")
         lines.append("")
 
     # 下一步
