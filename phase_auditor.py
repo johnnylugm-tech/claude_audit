@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-phase_auditor.py — methodology-v2 v7.5 Phase Audit Engine
+phase_auditor.py — methodology-v2 v7.14 Phase Audit Engine
 ============================================================
 審計者視角：只能存取 GitHub 某個階段的所有產出物，
 對 AI Agent 宣稱通過的 Phase 進行獨立驗證，輸出最終審計報告。
@@ -14,7 +14,7 @@ phase_auditor.py — methodology-v2 v7.5 Phase Audit Engine
     --phase         審計階段編號 1-8                    [必填]
     --branch        目標分支 (預設: main)               [選填]
     --project-name  專案顯示名稱                        [選填，自動從 repo 推斷]
-    --methodology-version  v7.5 (預設)                [選填]
+    --methodology-version  v7.14 (預設)               [選填]
 """
 
 import argparse
@@ -34,7 +34,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 
 # ─────────────────────────────────────────────
-# 1. METHODOLOGY-V2 v7.5 規則庫（硬編碼，不依賴遠端框架）
+# 1. METHODOLOGY-V2 v7.14 規則庫（硬編碼，不依賴遠端框架）
 # ─────────────────────────────────────────────
 
 HARD_RULES = {
@@ -65,7 +65,7 @@ NEGATIVE_CONSTRAINTS = {
     "subagent_inheriting_context": ("Subagent 繼承父級上下文", -15),
 }
 
-# 每個 Phase 的規格（依 SKILL.md v7.5 Phase 路由表）
+# 每個 Phase 的規格（依 SKILL.md v7.14 Phase 路由表）
 PHASE_SPEC = {
     1: {
         "name": "需求規格",
@@ -286,12 +286,23 @@ FAKE_PASS_PATTERNS = [
     r"^[✅✓]\s*Phase\s*\d+\s*(?:完成|PASS|通過)\s*$",
 ]
 
-# STAGE_PASS 必要章節（與 stage_pass_generator.py 輸出一致，v6.21 新增 confidence/summary）
+# STAGE_PASS 必要章節（v7.12: 7 H2 sections，對齊 stage_pass_generator.py）
 STAGE_PASS_REQUIRED_SECTIONS = [
     "階段目標達成",
-    "Agent B",
+    "Agent A 自評",
     "Agent B 審查",
+    "Phase Challenges",
+    "artifact_verification",
     "SIGN-OFF",
+]
+
+# STAGE_PASS H3 子章節（v7.12: 關鍵 H3，缺少則 WARNING）
+STAGE_PASS_SUBSECTIONS = [
+    "Phase Completion Summary",
+    "交付物清單",
+    "Agent A Confidence Summary",
+    "Agent B Confidence Summary",
+    "Phase Summary",
 ]
 
 # v6.21 新增: STAGE_PASS 結構化欄位（Agent 回傳格式規範）
@@ -549,7 +560,7 @@ class PhaseAuditor:
             detail=sp_path,
         ))
 
-        # 2a. 必要章節檢查
+        # 2a. 必要 H2 章節檢查
         missing_sections = []
         for section in STAGE_PASS_REQUIRED_SECTIONS:
             if section not in content:
@@ -569,7 +580,26 @@ class PhaseAuditor:
                 dimension="STAGE_PASS 憑證",
                 severity="PASS",
                 title="✅ STAGE_PASS 章節結構完整",
-                detail=f"包含所有必要章節：{', '.join(STAGE_PASS_REQUIRED_SECTIONS)}",
+                detail=f"包含所有 {len(STAGE_PASS_REQUIRED_SECTIONS)} 個必要章節",
+            ))
+
+        # 2a-2. H3 子章節檢查（v7.12 新增）
+        missing_subsections = [s for s in STAGE_PASS_SUBSECTIONS if s not in content]
+        if missing_subsections:
+            self.result.add(Finding(
+                check_id="C2",
+                dimension="STAGE_PASS 憑證",
+                severity="WARNING",
+                title=f"⚠️ STAGE_PASS 缺少 {len(missing_subsections)} 個子章節",
+                detail=f"缺少：{', '.join(missing_subsections)}（v7.12 要求 7H2+10H3=17 sections）",
+            ))
+        else:
+            self.result.add(Finding(
+                check_id="C2",
+                dimension="STAGE_PASS 憑證",
+                severity="PASS",
+                title="✅ STAGE_PASS 子章節完整（5/5 H3）",
+                detail=f"包含：{', '.join(STAGE_PASS_SUBSECTIONS)}",
             ))
 
         # 2b. Agent B 審查關鍵字
@@ -1844,7 +1874,7 @@ class PhaseAuditor:
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="PASS",
-                title="✅ Citations 採用 v7.5 標準格式（Artifact.md#L行號）且包含 artifact_verification",
+                title="✅ Citations 採用 v7.14 標準格式（Artifact.md#L行號）且包含 artifact_verification",
                 detail=detail,
             ))
         elif has_loose_refs and has_artifact_verify:
@@ -1852,8 +1882,8 @@ class PhaseAuditor:
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="WARNING",
-                title="⚠️ Citations 含行號但未採用 v7.5 標準格式（應為 SRS.md#L23）",
-                detail="v7.5 建議格式：Citations: SRS.md#L23-L45, SAD.md#L67",
+                title="⚠️ Citations 含行號但未採用 v7.14 標準格式（應為 SRS.md#L23）",
+                detail="v7.14 建議格式：Citations: SRS.md#L23-L45, SAD.md#L67",
                 rule_ref="HR-15",
             ))
         elif not has_loose_refs and not has_artifact_verify:
@@ -1862,7 +1892,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="CRITICAL",
                 title="❌ Citations 缺少行號引用與 artifact_verification（違反 HR-15, Integrity -15）",
-                detail="v7.5 HR-15: citations 必須含行號 + artifact_verification",
+                detail="v7.14 HR-15: citations 必須含行號 + artifact_verification",
                 rule_ref="HR-15",
             ))
         else:
@@ -1877,7 +1907,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="WARNING",
                 title=f"⚠️ Citations 缺少：{', '.join(missing)}（HR-15 部分不符）",
-                detail="v7.5 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
+                detail="v7.14 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
                 rule_ref="HR-15",
             ))
 
@@ -1889,7 +1919,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="INFO",
                 title="⚠️ Phase 3+ 未偵測到 verify_citations.py / citation_enforcer.py 執行記錄",
-                detail="v7.5 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證",
+                detail="v7.14 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證",
                 rule_ref="HR-15",
             ))
 
@@ -1967,26 +1997,7 @@ class PhaseAuditor:
 
     # ── C14: run-phase 入口驗證（v7.5 新增）──────────────
     def check_c14_run_phase_entry(self):
-        """C14: v7.5 — 驗證使用 python cli.py run-phase 標準入口
-        
-        注意：此檢查僅適用於 v7.5 以後執行的 Phase。
-        如果專案在 v7.5 發布前執行，則降級為 INFO。
-        """
-        
-        # 檢查專案執行時間（通过最早 Phase commit 推斷）
-        commits = self.gh.get_commits(per_page=100)
-        earliest_phase_commit = None
-        for c in commits:
-            msg = c.get("commit", {}).get("message", "")
-            if f"Phase {self.phase}" in msg or f"[Phase {self.phase}]" in msg:
-                earliest_phase_commit = c.get("commit", {}).get("author", {}).get("date", "")
-                break
-        
-        # v7.5 發布時間（假設為 2026-04-10 00:00:00 UTC）
-        # 如果找不到最早的 Phase commit 或早於 v7.5，則降級為 INFO
-        v7_5_release = "2026-04-10T00:00:00Z"
-        is_pre_v75 = not earliest_phase_commit or earliest_phase_commit < v7_5_release
-        
+        """C14: v7.5 — 驗證使用 python cli.py run-phase 標準入口"""
         dev_content = self._content(["DEVELOPMENT_LOG.md"]) or ""
 
         # 檢查 run-phase 使用
@@ -2009,23 +2020,23 @@ class PhaseAuditor:
                 dimension="run-phase 入口驗證",
                 severity="PASS",
                 title="✅ 使用標準入口 python cli.py run-phase + Pre-flight 驗證",
-                detail="符合 v7.5 §run-phase 單一入口點原則",
+                detail="符合 v7.14 §run-phase 單一入口點原則",
             ))
         elif has_run_phase:
             self.result.add(Finding(
                 check_id="C14",
                 dimension="run-phase 入口驗證",
-                severity="WARNING" if not is_pre_v75 else "INFO",
-                title="⚠️ 使用 run-phase 但未偵測到 Pre-flight 執行" if not is_pre_v75 else "ℹ️ 使用 run-phase 但未偵測到 Pre-flight 執行（v7.5 前執行）",
-                detail="v7.5 要求 Pre-flight checks 在 Phase 進入前執行" if not is_pre_v75 else "此專案在 v7.5 發布前執行，v7.5 規則不適用",
+                severity="WARNING",
+                title="⚠️ 使用 run-phase 但未偵測到 Pre-flight 執行",
+                detail="v7.14 要求 Pre-flight checks 在 Phase 進入前執行",
             ))
         else:
             self.result.add(Finding(
                 check_id="C14",
                 dimension="run-phase 入口驗證",
-                severity="WARNING" if not is_pre_v75 else "INFO",
-                title="⚠️ 未使用 python cli.py run-phase 標準入口" if not is_pre_v75 else "ℹ️ 未使用 python cli.py run-phase（v7.5 前執行）",
-                detail="v7.5 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查" if not is_pre_v75 else "此專案在 v7.5 發布前執行，v7.5 run-phase 規定不適用",
+                severity="WARNING",
+                title="⚠️ 未使用 python cli.py run-phase 標準入口",
+                detail="v7.14 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查",
             ))
 
     # ── C15: artifact_verification 強制欄位（v7.5 增強）──────────────
@@ -2074,7 +2085,7 @@ class PhaseAuditor:
                 dimension="artifact_verification 強制欄位",
                 severity="PASS",
                 title="✅ 包含 artifact_verification 記錄",
-                detail="符合 v7.5 §HR-15 強制驗證欄位",
+                detail="符合 v7.14 §HR-15 強制驗證欄位",
             ))
         else:
             self.result.add(Finding(
@@ -2082,7 +2093,7 @@ class PhaseAuditor:
                 dimension="artifact_verification 強制欄位",
                 severity="CRITICAL",
                 title="❌ artifact_verification 強制欄位缺失",
-                detail="v7.5 HR-15: Phase 3+ 必須包含 artifact_verification 記錄（Integrity -15）",
+                detail="v7.14 HR-15: Phase 3+ 必須包含 artifact_verification 記錄（Integrity -15）",
                 rule_ref="HR-15",
             ))
 
@@ -2173,7 +2184,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         f"",
         f"> **專案**：{result.repo}  ",
         f"> **審計時間**：{result.audit_time}  ",
-        f"> **方法論版本**：methodology-v2 v7.5  ",
+        f"> **方法論版本**：methodology-v2 v7.14  ",
         f"> **審計工具**：phase_auditor.py  ",
         f"",
         f"---",
@@ -2265,7 +2276,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
     lines += [
         f"",
         f"---",
-        f"*由 phase_auditor.py 自動生成 | methodology-v2 v7.5*",
+        f"*由 phase_auditor.py 自動生成 | methodology-v2 v7.14*",
     ]
 
     return "\n".join(lines)
@@ -2294,7 +2305,7 @@ def main():
 
   無需提供（工具自動偵測）：
     - methodology 版本（從 STAGE_PASS 或 DEVELOPMENT_LOG 自動偵測）
-    - Phase 規格（內建 SKILL.md v7.5 規則庫）
+    - Phase 規格（內建 SKILL.md v7.14 規則庫）
     - 文件路徑（支援多種命名慣例自動解析）
 
 使用範例：
