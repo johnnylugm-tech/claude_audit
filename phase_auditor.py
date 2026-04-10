@@ -132,7 +132,7 @@ PHASE_SPEC = {
     },
     3: {
         "name": "代碼實現",
-        "agent_a": "developer",
+        "agent_a": "architect",
         "agent_b": "reviewer",
         "ab_rounds": -1,  # 每模組一次
         "constitution_type": "implementation",
@@ -1445,7 +1445,10 @@ class PhaseAuditor:
         missing = []
         for path in sample:
             content = self.gh.get_file_content(path)
-            if content and "@FR:" in content:
+            if content and (
+                "@FR:" in content
+                or re.search(r"\[FR-\d+\]", content)
+            ):
                 annotated.append(path)
             elif content:
                 missing.append(path)
