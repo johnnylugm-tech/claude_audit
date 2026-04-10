@@ -1,8 +1,8 @@
 # 審計報告 — Phase 3: 代碼實現
 
 > **專案**：johnnylugm-tech/tts-kokoro-v613  
-> **審計時間**：2026-04-10 08:25 UTC  
-> **方法論版本**：methodology-v2 v6.109  
+> **審計時間**：2026-04-10 08:37 UTC  
+> **方法論版本**：methodology-v2 v7.5  
 > **審計工具**：phase_auditor.py  
 
 ---
@@ -13,8 +13,8 @@
 |------|------|
 | 裁決 | ❌ **不通過** |
 | 審計分數 | **0.0 / 100** |
-| 嚴重問題（CRITICAL） | 6 個 |
-| 警告（WARNING） | 4 個 |
+| 嚴重問題（CRITICAL） | 7 個 |
+| 警告（WARNING） | 5 個 |
 | 通過項目（PASS） | 8 個 |
 
 ## 🔴 嚴重問題（必須修正才能進入下一 Phase）
@@ -55,6 +55,12 @@
 - **規則依據**：TH-16 — 
 - **詳情**：v6.15 SKILL.md §Phase 3 要求每個主要類別/函式含 @FR，用於 trace-check TH-16
 
+### ❌ artifact_verification 強制欄位缺失
+- **維度**：artifact_verification 強制欄位
+- **Check ID**：C15
+- **規則依據**：HR-15 — citations 必須含行號 + artifact_verification，缺少則 Integrity -15
+- **詳情**：v7.5 HR-15: Phase 3+ 必須包含 artifact_verification 記錄（Integrity -15）
+
 ## 🟡 警告（建議修正）
 
 - ⚠️ DEVELOPMENT_LOG 找不到 Phase 3 專屬段落
@@ -62,11 +68,13 @@
 - ⚠️ Phase 3 未找到 Verify_Agent 執行記錄
   - v6.21 SKILL.md 要求 Phase 3+ 在 Agent B < 80 或自評差異 > 20 時觸發 Verify_Agent；即使未觸發，建議在 DEVELOPMENT_LOG 中記錄「未觸發原因」
 - ⚠️ Citations 缺少：artifact_verification（HR-15 部分不符）
-  - v6.109 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15
+  - v7.5 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15
   - 規則：HR-15
 - ⚠️ Phase 3+ 未偵測到 verify_citations.py / citation_enforcer.py 執行記錄
-  - v6.109 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證
+  - v7.5 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證
   - 規則：HR-15
+- ⚠️ 未使用 python cli.py run-phase 標準入口
+  - v7.5 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查
 
 ## 各維度詳細結果
 
@@ -132,13 +140,23 @@
 ### 🟡 Citations 品質
 
 - ⚠️ Citations 缺少：artifact_verification（HR-15 部分不符）
-  > v6.109 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15
+  > v7.5 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15
 - ⚠️ Phase 3+ 未偵測到 verify_citations.py / citation_enforcer.py 執行記錄
-  > v6.109 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證
+  > v7.5 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證
 
 ### ✅ FORBIDDEN 模式
 
 - ✅ 未偵測到 SKILL.md FORBIDDEN 模式違規
+
+### 🟡 run-phase 入口驗證
+
+- ⚠️ 未使用 python cli.py run-phase 標準入口
+  > v7.5 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查
+
+### 🔴 artifact_verification 強制欄位
+
+- ❌ artifact_verification 強制欄位缺失
+  > v7.5 HR-15: Phase 3+ 必須包含 artifact_verification 記錄（Integrity -15）
 
 ## 修正建議
 
@@ -154,14 +172,17 @@
    - 找到的 roles：{'reviewer', 'architect'}，期望：developer, reviewer
 6. **[CRITICAL]** @FR annotation 嚴重不足：0%（0/9 個檔案）
    - v6.15 SKILL.md §Phase 3 要求每個主要類別/函式含 @FR，用於 trace-check TH-16
-7. **[WARNING]** DEVELOPMENT_LOG 找不到 Phase 3 專屬段落
-8. **[WARNING]** Phase 3 未找到 Verify_Agent 執行記錄
-9. **[WARNING]** Citations 缺少：artifact_verification（HR-15 部分不符）
-10. **[WARNING]** Phase 3+ 未偵測到 verify_citations.py / citation_enforcer.py 執行記錄
+7. **[CRITICAL]** artifact_verification 強制欄位缺失
+   - v7.5 HR-15: Phase 3+ 必須包含 artifact_verification 記錄（Integrity -15）
+8. **[WARNING]** DEVELOPMENT_LOG 找不到 Phase 3 專屬段落
+9. **[WARNING]** Phase 3 未找到 Verify_Agent 執行記錄
+10. **[WARNING]** Citations 缺少：artifact_verification（HR-15 部分不符）
+11. **[WARNING]** Phase 3+ 未偵測到 verify_citations.py / citation_enforcer.py 執行記錄
+12. **[WARNING]** 未使用 python cli.py run-phase 標準入口
 
 ## 下一步
 
 ❌ 修正所有 CRITICAL 問題後，重新提交 Phase 3 產物，並再次執行審計。
 
 ---
-*由 phase_auditor.py 自動生成 | methodology-v2 v6.109*
+*由 phase_auditor.py 自動生成 | methodology-v2 v7.5*
