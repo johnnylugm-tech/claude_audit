@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-phase_auditor.py — methodology-v2 v6.109 Phase Audit Engine
+phase_auditor.py — methodology-v2 v7.5 Phase Audit Engine
 ============================================================
 審計者視角：只能存取 GitHub 某個階段的所有產出物，
 對 AI Agent 宣稱通過的 Phase 進行獨立驗證，輸出最終審計報告。
 
 使用方式：
     python phase_auditor.py --repo johnnylugm-tech/tts-kokoro-v613 --phase 1
-    python phase_auditor.py --repo OWNER/REPO --phase 2 --methodology-version v6.109
+    python phase_auditor.py --repo OWNER/REPO --phase 2 --methodology-version v7.5
 
 初始化必要資訊（project_context）：
     --repo          GitHub repo (owner/repo)           [必填]
     --phase         審計階段編號 1-8                    [必填]
     --branch        目標分支 (預設: main)               [選填]
     --project-name  專案顯示名稱                        [選填，自動從 repo 推斷]
-    --methodology-version  v6.109 (預設)                [選填]
+    --methodology-version  v7.5 (預設)                [選填]
 """
 
 import argparse
@@ -34,7 +34,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 
 # ─────────────────────────────────────────────
-# 1. METHODOLOGY-V2 v6.109 規則庫（硬編碼，不依賴遠端框架）
+# 1. METHODOLOGY-V2 v7.5 規則庫（硬編碼，不依賴遠端框架）
 # ─────────────────────────────────────────────
 
 HARD_RULES = {
@@ -50,7 +50,7 @@ HARD_RULES = {
     "HR-12": "A/B 審查同一 Phase 超過 5 輪 → 強制 PAUSE，等待人工裁決",
     "HR-13": "Phase 執行時長超過預估時間的 3 倍 → 強制 checkpoint，PAUSE 等待裁決",
     "HR-14": "Integrity 分數降至 < 40 → FREEZE 專案，全面審計後才能繼續",
-    # v6.109 新增
+    # v7.5 新增
     "HR-15": "citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
 }
 
@@ -61,11 +61,11 @@ NEGATIVE_CONSTRAINTS = {
     "ellipsis_in_code": ("程式碼中使用省略號 ... 代替實際實作", -10),
     "missing_summary": ("Agent 回傳缺少 50 字內摘要（Phase 3+）", -10),
     "missing_confidence": ("Agent 回傳缺少 confidence 1-10 自評分", -5),
-    # v6.109 新增
+    # v7.5 新增
     "subagent_inheriting_context": ("Subagent 繼承父級上下文", -15),
 }
 
-# 每個 Phase 的規格（依 SKILL.md v6.109 Phase 路由表）
+# 每個 Phase 的規格（依 SKILL.md v7.5 Phase 路由表）
 PHASE_SPEC = {
     1: {
         "name": "需求規格",
@@ -274,7 +274,7 @@ QG_EVIDENCE_PATTERNS = [
     r"enforce.*?(?:BLOCK|PASS|0.*?違規)",
     r"Constitution Score.*?[\d.]+",
     r"(?:Verify_Agent|verify_agent|Verifier|第三方驗證).*?(?:PASS|FAIL|完成|執行)",  # v6.21
-    # v6.109 新增: HR-15 Layer 3 工具
+    # v7.5 新增: HR-15 Layer 3 工具
     r"verify_citations\.py.*?(?:PASS|FAIL|\d+\s*files|\d+\s*Citations)",
     r"citation_enforcer\.py.*?(?:PASS|FAIL|passed|invalid)",
 ]
@@ -1649,7 +1649,7 @@ class PhaseAuditor:
                 rule_ref="HR-14",
             ))
 
-        # v6.109 新增: HR-13 煞車狀態檢查
+        # v7.5 新增: HR-13 煞車狀態檢查
         hr13_triggered = state.get("hr13_triggered", False)
         hr13_remaining = state.get("hr13_remaining_minutes")
         estimated = state.get("estimated_minutes")
@@ -1746,10 +1746,10 @@ class PhaseAuditor:
                     detail="",
                 ))
 
-    # ── C12: Citations 品質（HR-15, v6.109 新增）──────────
+    # ── C12: Citations 品質（HR-15, v7.5 新增）──────────
     def check_c12_citations_quality(self):
-        """C12: v6.109 — citations 必須含行號 + artifact_verification，缺少則 Integrity -15
-        v6.109 新增：對齊 verify_citations.py 的精確格式 (SRS.md#L23-L45)"""
+        """C12: v7.5 — citations 必須含行號 + artifact_verification，缺少則 Integrity -15
+        v7.5 新增：對齊 verify_citations.py 的精確格式 (SRS.md#L23-L45)"""
         # 收集所有可能含 citations 的文件
         dev_content = self._content(["DEVELOPMENT_LOG.md"]) or ""
 
@@ -1774,7 +1774,7 @@ class PhaseAuditor:
             ))
             return
 
-        # ── v6.109 精確 citation 格式（對齊 verify_citations.py）──
+        # ── v7.5 精確 citation 格式（對齊 verify_citations.py）──
         # 標準格式: SRS.md#L23, SAD.md#L45-L67, SPEC.md#L10-20
         structured_citation = re.compile(
             r"(?:SRS|SAD|SPEC|ARCH)\.md#L\d+(?:-L?\d+)?",
@@ -1818,7 +1818,7 @@ class PhaseAuditor:
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="PASS",
-                title="✅ Citations 採用 v6.109 標準格式（Artifact.md#L行號）且包含 artifact_verification",
+                title="✅ Citations 採用 v7.5 標準格式（Artifact.md#L行號）且包含 artifact_verification",
                 detail=detail,
             ))
         elif has_loose_refs and has_artifact_verify:
@@ -1826,8 +1826,8 @@ class PhaseAuditor:
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="WARNING",
-                title="⚠️ Citations 含行號但未採用 v6.109 標準格式（應為 SRS.md#L23）",
-                detail="v6.109 建議格式：Citations: SRS.md#L23-L45, SAD.md#L67",
+                title="⚠️ Citations 含行號但未採用 v7.5 標準格式（應為 SRS.md#L23）",
+                detail="v7.5 建議格式：Citations: SRS.md#L23-L45, SAD.md#L67",
                 rule_ref="HR-15",
             ))
         elif not has_loose_refs and not has_artifact_verify:
@@ -1836,7 +1836,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="CRITICAL",
                 title="❌ Citations 缺少行號引用與 artifact_verification（違反 HR-15, Integrity -15）",
-                detail="v6.109 HR-15: citations 必須含行號 + artifact_verification",
+                detail="v7.5 HR-15: citations 必須含行號 + artifact_verification",
                 rule_ref="HR-15",
             ))
         else:
@@ -1850,24 +1850,24 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="WARNING",
                 title=f"⚠️ Citations 缺少：{', '.join(missing)}（HR-15 部分不符）",
-                detail="v6.109 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
+                detail="v7.5 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
                 rule_ref="HR-15",
             ))
 
-        # ── v6.109 新增：檢查 verify_citations.py 是否已執行 ──
+        # ── v7.5 新增：檢查 verify_citations.py 是否已執行 ──
         if self.phase >= 3 and not has_verify_tool:
             self.result.add(Finding(
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="WARNING",
                 title="⚠️ Phase 3+ 未偵測到 verify_citations.py / citation_enforcer.py 執行記錄",
-                detail="v6.109 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證",
+                detail="v7.5 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證",
                 rule_ref="HR-15",
             ))
 
-    # ── C13: FORBIDDEN 模式偵測（v6.109 新增）──────────
+    # ── C13: FORBIDDEN 模式偵測（v7.5 新增）──────────
     def check_c13_forbidden_patterns(self):
-        """C13: v6.109 — 偵測 SKILL.md 明確禁止的模式（ellipsis in code, fabrication 等）"""
+        """C13: v7.5 — 偵測 SKILL.md 明確禁止的模式（ellipsis in code, fabrication 等）"""
         dev_content = self._content(["DEVELOPMENT_LOG.md"]) or ""
 
         # 搜集 Phase 相關的所有 .py 檔案（若有）
@@ -1898,7 +1898,7 @@ class PhaseAuditor:
         if fab_matches:
             violations.append(f"fabricated_content 疑慮: DEVELOPMENT_LOG 含 {len(fab_matches)} 處可疑標記")
 
-        # 3. 檢查 subagent_inheriting_context（v6.109 新增）
+        # 3. 檢查 subagent_inheriting_context（v7.5 新增）
         inherit_pattern = re.compile(
             r"(?:inherit|繼承).*(?:context|上下文|parent)",
             re.IGNORECASE,
@@ -1928,6 +1928,103 @@ class PhaseAuditor:
                     detail=f"NEGATIVE_CONSTRAINT: {penalty[0] if isinstance(penalty, tuple) else penalty}",
                 ))
 
+    # ── C14: run-phase 入口驗證（v7.5 新增）──────────────
+    def check_c14_run_phase_entry(self):
+        """C14: v7.5 — 驗證使用 python cli.py run-phase 標準入口"""
+        dev_content = self._content(["DEVELOPMENT_LOG.md"]) or ""
+
+        # 檢查 run-phase 使用
+        run_phase_pattern = re.compile(
+            r"python\s+cli\.py\s+run-phase|run-phase.*--phase\s*\d+",
+            re.IGNORECASE,
+        )
+        has_run_phase = bool(run_phase_pattern.search(dev_content))
+
+        # 檢查 Pre-flight 執行
+        preflight_pattern = re.compile(
+            r"pre-flight|pre_flight|PRE-FLIGHT|preflight",
+            re.IGNORECASE,
+        )
+        has_preflight = bool(preflight_pattern.search(dev_content))
+
+        if has_run_phase and has_preflight:
+            self.result.add(Finding(
+                check_id="C14",
+                dimension="run-phase 入口驗證",
+                severity="PASS",
+                title="✅ 使用標準入口 python cli.py run-phase + Pre-flight 驗證",
+                detail="符合 v7.5 §run-phase 單一入口點原則",
+            ))
+        elif has_run_phase:
+            self.result.add(Finding(
+                check_id="C14",
+                dimension="run-phase 入口驗證",
+                severity="WARNING",
+                title="⚠️ 使用 run-phase 但未偵測到 Pre-flight 執行",
+                detail="v7.5 要求 Pre-flight checks 在 Phase 進入前執行",
+            ))
+        else:
+            self.result.add(Finding(
+                check_id="C14",
+                dimension="run-phase 入口驗證",
+                severity="WARNING",
+                title="⚠️ 未使用 python cli.py run-phase 標準入口",
+                detail="v7.5 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查",
+            ))
+
+    # ── C15: artifact_verification 強制欄位（v7.5 增強）──────────────
+    def check_c15_artifact_verification(self):
+        """C15: v7.5 — artifact_verification 欄位必須出現在所有 Phase 3+ 產物"""
+        if self.phase < 3:
+            self.result.add(Finding(
+                check_id="C15",
+                dimension="artifact_verification 強制欄位",
+                severity="INFO",
+                title="ℹ️ artifact_verification 檢查不適用於 Phase 1-2",
+                detail="",
+            ))
+            return
+
+        dev_content = self._content(["DEVELOPMENT_LOG.md"]) or ""
+        sp_content = self._content([
+            f"00-summary/Phase{self.phase}_STAGE_PASS.md",
+            f"Phase{self.phase}_STAGE_PASS.md",
+        ]) or ""
+
+        combined = dev_content + "\n" + sp_content
+
+        # 檢查 artifact_verification JSON 結構
+        artifact_verify_pattern = re.compile(
+            r'"artifact_verification"\s*:\s*\{[^}]+\}',
+            re.IGNORECASE | re.DOTALL,
+        )
+        has_artifact_field = bool(artifact_verify_pattern.search(combined))
+
+        # 檢查文字格式的 artifact_verification
+        text_verify_pattern = re.compile(
+            r"artifact_verification|已讀.*(?:SRS|SAD|SPEC|ARCH)\.md|verified.*artifact",
+            re.IGNORECASE,
+        )
+        has_text_verify = bool(text_verify_pattern.search(combined))
+
+        if has_artifact_field or has_text_verify:
+            self.result.add(Finding(
+                check_id="C15",
+                dimension="artifact_verification 強制欄位",
+                severity="PASS",
+                title="✅ 包含 artifact_verification 記錄",
+                detail="符合 v7.5 §HR-15 強制驗證欄位",
+            ))
+        else:
+            self.result.add(Finding(
+                check_id="C15",
+                dimension="artifact_verification 強制欄位",
+                severity="CRITICAL",
+                title="❌ artifact_verification 強制欄位缺失",
+                detail="v7.5 HR-15: Phase 3+ 必須包含 artifact_verification 記錄（Integrity -15）",
+                rule_ref="HR-15",
+            ))
+
     # ── 執行所有檢查 ──────────────────────────────────
     def run_all_checks(self) -> AuditResult:
         print(f"\
@@ -1949,6 +2046,8 @@ class PhaseAuditor:
             ("C11 Verify_Agent 記錄",  self.check_c11_verify_agent),
             ("C12 Citations HR-15",     self.check_c12_citations_quality),
             ("C13 FORBIDDEN 模式",     self.check_c13_forbidden_patterns),
+            ("C14 run-phase 入口驗證",  self.check_c14_run_phase_entry),
+            ("C15 artifact_verification", self.check_c15_artifact_verification),
         ]
         for name, fn in checks:
             print(f"  → {name}...", end=" ", flush=True)
@@ -2008,7 +2107,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         f"",
         f"> **專案**：{result.repo}  ",
         f"> **審計時間**：{result.audit_time}  ",
-        f"> **方法論版本**：methodology-v2 v6.109  ",
+        f"> **方法論版本**：methodology-v2 v7.5  ",
         f"> **審計工具**：phase_auditor.py  ",
         f"",
         f"---",
@@ -2103,7 +2202,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
     lines += [
         f"",
         f"---",
-        f"*由 phase_auditor.py 自動生成 | methodology-v2 v6.109*",
+        f"*由 phase_auditor.py 自動生成 | methodology-v2 v7.5*",
     ]
 
     return "\n".join(lines)
@@ -2132,7 +2231,7 @@ def main():
 
   無需提供（工具自動偵測）：
     - methodology 版本（從 STAGE_PASS 或 DEVELOPMENT_LOG 自動偵測）
-    - Phase 規格（內建 SKILL.md v6.109 規則庫）
+    - Phase 規格（內建 SKILL.md v7.5 規則庫）
     - 文件路徑（支援多種命名慣例自動解析）
 
 使用範例：
