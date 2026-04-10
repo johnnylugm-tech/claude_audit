@@ -23,8 +23,8 @@ jobs:
       contents: write
 
     env:
-      # GitHub token for gh CLI (works for public repos)
       GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
     steps:
       - name: Checkout claude_audit repo
@@ -35,16 +35,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Verify gh CLI installed
-        run: |
-          which gh >/dev/null 2>&1 && gh --version || echo "gh not in PATH, using fallback"
-          # GitHub Actions runners include gh CLI by default on ubuntu-latest
-
       - name: Run audit (phase_auditor.py v7.5)
         id: audit
         run: |
-          set -e
-          # Build proper report directory: reports/OWNER/REPO/BRANCH/
+          # Build report path
           REPO="${{ github.event.inputs.repo }}"
           OWNER=$(echo "$REPO" | cut -d/ -f1)
           REPO_NAME=$(echo "$REPO" | cut -d/ -f2)
@@ -52,25 +46,33 @@ jobs:
           REPORT_DIR="reports/${OWNER}/${REPO_NAME}/${BRANCH}"
           mkdir -p "$REPORT_DIR"
           REPORT_FILE="${REPORT_DIR}/audit_phase${{ github.event.inputs.phase }}.md"
+
+          # Export report path BEFORE running audit (so downstream always has it)
+          echo "report_file=${REPORT_FILE}" >> $GITHUB_OUTPUT
+
+          # Run audit — exit code 0=PASS, 1=CONDITIONAL_PASS, 2=FAIL
+          # All three are valid outcomes that produce a report
           python3 phase_auditor.py \
             --repo "$REPO" \
             --phase "${{ github.event.inputs.phase }}" \
             --branch "$BRANCH" \
-            --save "${REPORT_FILE}"
-          # Export report path for downstream steps
-          echo "report_file=${REPORT_FILE}" >> $GITHUB_OUTPUT
-        continue-on-error: true
+            --save "${REPORT_FILE}" \
+            && AUDIT_RC=$? || AUDIT_RC=$?
+
+          echo "audit_rc=${AUDIT_RC}" >> $GITHUB_OUTPUT
+
+          # Only fail if audit crashed (rc > 2 means unexpected error)
+          if [ "$AUDIT_RC" -gt 2 ]; then
+            echo "❌ Audit crashed with unexpected exit code: $AUDIT_RC" >&2
+            exit 1
+          fi
+
+          echo "✅ Audit completed (exit code $AUDIT_RC)"
 
       - name: Extract verdict from report
         id: verdict
         run: |
           REPORT="${{ steps.audit.outputs.report_file }}"
-          if [ -z "$REPORT" ]; then
-            echo "❌ Audit failed or report path not exported" >&2
-            echo "VERDICT=ERROR" >> $GITHUB_OUTPUT
-            echo "REPORT=" >> $GITHUB_OUTPUT
-            exit 1
-          fi
           if [ ! -f "$REPORT" ]; then
             echo "❌ Report file not found: $REPORT" >&2
             echo "VERDICT=ERROR" >> $GITHUB_OUTPUT
@@ -80,35 +82,28 @@ jobs:
           # Extract verdict from table: "| 裁決 | ✅ **通過** |"
           VERDICT=$(sed -n '/^| 裁決 |/p' "$REPORT" | sed 's/^|[^|]*|\s*//;s/\s*|$//' | sed 's/<[^>]*>//g' | xargs)
           if [ -z "$VERDICT" ]; then
-            echo "❌ Failed to extract verdict from report" >&2
-            VERDICT="ERROR"
+            VERDICT="ERROR (could not extract)"
           fi
+          echo "✅ Verdict: $VERDICT"
           echo "VERDICT=$VERDICT" >> $GITHUB_OUTPUT
           echo "REPORT=$REPORT" >> $GITHUB_OUTPUT
 
       - name: Commit and push report
-        if: steps.verdict.outcome == 'success'
+        if: steps.verdict.outputs.REPORT != ''
         run: |
           set -eo pipefail
           git config user.name "claude-audit-bot"
           git config user.email "audit-bot@noreply.github.com"
-          git add reports/ || true
+          git add reports/
 
           VERDICT="${{ steps.verdict.outputs.VERDICT }}"
 
           if git diff --cached --quiet; then
             echo "✅ No new report changes to commit."
           else
-            git commit -m "audit: ${{ github.event.inputs.repo }} phase ${{ github.event.inputs.phase }} (${{ github.event.inputs.branch }}) — ${VERDICT}" || {
-              echo "⚠️ Commit failed (may be protected branch)"
-              exit 0
-            }
-            if git push; then
-              echo "✅ Report committed and pushed."
-            else
-              echo "❌ Push failed - check branch protection or auth" >&2
-              exit 1
-            fi
+            git commit -m "audit: ${{ github.event.inputs.repo }} phase ${{ github.event.inputs.phase }} (${{ github.event.inputs.branch }}) — ${VERDICT}"
+            git push
+            echo "✅ Report committed and pushed."
           fi
 
       - name: Job summary
@@ -126,4 +121,7 @@ jobs:
             cat "$REPORT_FILE" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "</details>" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Audit Failed" >> $GITHUB_STEP_SUMMARY
+            echo "No report was generated. Check the workflow logs." >> $GITHUB_STEP_SUMMARY
           fi
