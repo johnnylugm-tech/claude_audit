@@ -43,11 +43,14 @@ jobs:
       - name: Run audit (phase_auditor.py v6.109)
         id: audit
         run: |
+          # Replace / with _ in repo name to avoid path issues
+          REPO_SAFE="${{ github.event.inputs.repo }}"
+          REPO_SAFE="${REPO_SAFE////_}"
           python3 phase_auditor.py \
             --repo "${{ github.event.inputs.repo }}" \
             --phase "${{ github.event.inputs.phase }}" \
             --branch "${{ github.event.inputs.branch }}" \
-            --save "reports/audit_${{ github.event.inputs.repo }}_phase${{ github.event.inputs.phase }}.md"
+            --save "reports/audit_${REPO_SAFE}_phase${{ github.event.inputs.phase }}.md"
         continue-on-error: true
 
       - name: Extract verdict from report
