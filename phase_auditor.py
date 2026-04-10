@@ -373,7 +373,7 @@ class GitHubFetcher:
             return None
 
     def get_tree(self) -> list[dict]:
-        """取得整個 repo 的檔案樹"""
+        """取得整個 repo 的檔案樹（含目錄和檔案）"""
         if self._tree is not None:
             return self._tree
         data = self._gh(
@@ -382,15 +382,18 @@ class GitHubFetcher:
         if not data or "tree" not in data:
             self._tree = []
         else:
-            self._tree = [
-                item for item in data["tree"]
-                if item.get("type") == "blob"
-            ]
+            self._tree = data["tree"]
         return self._tree
 
+    def get_files(self) -> list[dict]:
+        """取得整個 repo 的檔案樹（僅檔案，不含目錄）"""
+        return [item for item in self.get_tree() if item.get("type") == "blob"]
+
     def file_exists(self, path: str) -> bool:
+        """檢查檔案或目錄是否存在（支援尾部 / 移除）"""
+        normalized = path.rstrip("/")
         tree = self.get_tree()
-        return any(item["path"] == path for item in tree)
+        return any(item["path"] == normalized for item in tree)
 
     def resolve_path(self, candidates: list[str]) -> Optional[str]:
         """從候選路徑列表中找到第一個存在的路徑"""
@@ -508,7 +511,7 @@ class PhaseAuditor:
         #   - Phase_2_-_架構設計_STAGE_PASS.md (Phase + underscore + number + underscore + text)
         _p = str(self.phase)
         tree_paths = [
-            item["path"] for item in self.gh.get_tree()
+            item["path"] for item in self.gh.get_files()
             if re.search(rf"Phase{_p}[^0-9]|Phase_{_p}[^0-9]", item["path"])
             and "STAGE_PASS" in item["path"]
         ]
@@ -1260,7 +1263,7 @@ class PhaseAuditor:
             f"Phase_{self.phase}-",
         ]
         sp_paths = sorted([
-            item["path"] for item in self.gh.get_tree()
+            item["path"] for item in self.gh.get_files()
             if any(pat in item["path"] for pat in phase_patterns)
             and "STAGE_PASS" in item["path"]
         ], key=lambda p: -len(p))
@@ -1420,7 +1423,7 @@ class PhaseAuditor:
 
     def _check_fr_annotations(self):
         """Phase 3: 掃描 src/ 中 Python/JS 檔案，驗證 @FR annotation 存在"""
-        tree = self.gh.get_tree()
+        tree = self.gh.get_files()
         src_files = [
             item["path"] for item in tree
             if any(item["path"].startswith(pfx) for pfx in ["src/", "app/", "03-development/src/"])
@@ -1491,7 +1494,7 @@ class PhaseAuditor:
 
     def _check_covers_annotations(self):
         """Phase 4: 掃描 tests/ 中測試檔案，驗證 @covers annotation 存在"""
-        tree = self.gh.get_tree()
+        tree = self.gh.get_files()
         test_files = [
             item["path"] for item in tree
             if any(item["path"].startswith(pfx) for pfx in ["tests/", "test/", "04-testing/"])
@@ -1696,7 +1699,7 @@ class PhaseAuditor:
         # 找到當前 Phase 的 STAGE_PASS 內容
         phase_patterns = [f"Phase{self.phase}_", f"Phase_{self.phase}_", f"Phase_{self.phase}-"]
         sp_paths = sorted([
-            item["path"] for item in self.gh.get_tree()
+            item["path"] for item in self.gh.get_files()
             if any(pat in item["path"] for pat in phase_patterns)
             and "STAGE_PASS" in item["path"]
         ], key=lambda p: -len(p))
@@ -1756,7 +1759,7 @@ class PhaseAuditor:
         # 搜尋 STAGE_PASS
         phase_patterns = [f"Phase{self.phase}_", f"Phase_{self.phase}_", f"Phase_{self.phase}-"]
         sp_paths = sorted([
-            item["path"] for item in self.gh.get_tree()
+            item["path"] for item in self.gh.get_files()
             if any(pat in item["path"] for pat in phase_patterns)
             and "STAGE_PASS" in item["path"]
         ], key=lambda p: -len(p))
@@ -1873,7 +1876,7 @@ class PhaseAuditor:
         # 搜集 Phase 相關的所有 .py 檔案（若有）
         phase_patterns = [f"Phase{self.phase}", f"Phase_{self.phase}", f"phase{self.phase}"]
         code_files = [
-            item["path"] for item in self.gh.get_tree()
+            item["path"] for item in self.gh.get_files()
             if item["path"].endswith(".py")
             and any(pat.lower() in item["path"].lower() for pat in phase_patterns)
         ]
