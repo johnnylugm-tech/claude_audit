@@ -1967,7 +1967,26 @@ class PhaseAuditor:
 
     # ── C14: run-phase 入口驗證（v7.5 新增）──────────────
     def check_c14_run_phase_entry(self):
-        """C14: v7.5 — 驗證使用 python cli.py run-phase 標準入口"""
+        """C14: v7.5 — 驗證使用 python cli.py run-phase 標準入口
+        
+        注意：此檢查僅適用於 v7.5 以後執行的 Phase。
+        如果專案在 v7.5 發布前執行，則降級為 INFO。
+        """
+        
+        # 檢查專案執行時間（通过最早 Phase commit 推斷）
+        commits = self.gh.get_commits(per_page=100)
+        earliest_phase_commit = None
+        for c in commits:
+            msg = c.get("commit", {}).get("message", "")
+            if f"Phase {self.phase}" in msg or f"[Phase {self.phase}]" in msg:
+                earliest_phase_commit = c.get("commit", {}).get("author", {}).get("date", "")
+                break
+        
+        # v7.5 發布時間（假設為 2026-04-10 00:00:00 UTC）
+        # 如果找不到最早的 Phase commit 或早於 v7.5，則降級為 INFO
+        v7_5_release = "2026-04-10T00:00:00Z"
+        is_pre_v75 = not earliest_phase_commit or earliest_phase_commit < v7_5_release
+        
         dev_content = self._content(["DEVELOPMENT_LOG.md"]) or ""
 
         # 檢查 run-phase 使用
@@ -1996,17 +2015,17 @@ class PhaseAuditor:
             self.result.add(Finding(
                 check_id="C14",
                 dimension="run-phase 入口驗證",
-                severity="WARNING",
-                title="⚠️ 使用 run-phase 但未偵測到 Pre-flight 執行",
-                detail="v7.5 要求 Pre-flight checks 在 Phase 進入前執行",
+                severity="WARNING" if not is_pre_v75 else "INFO",
+                title="⚠️ 使用 run-phase 但未偵測到 Pre-flight 執行" if not is_pre_v75 else "ℹ️ 使用 run-phase 但未偵測到 Pre-flight 執行（v7.5 前執行）",
+                detail="v7.5 要求 Pre-flight checks 在 Phase 進入前執行" if not is_pre_v75 else "此專案在 v7.5 發布前執行，v7.5 規則不適用",
             ))
         else:
             self.result.add(Finding(
                 check_id="C14",
                 dimension="run-phase 入口驗證",
-                severity="WARNING",
-                title="⚠️ 未使用 python cli.py run-phase 標準入口",
-                detail="v7.5 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查",
+                severity="WARNING" if not is_pre_v75 else "INFO",
+                title="⚠️ 未使用 python cli.py run-phase 標準入口" if not is_pre_v75 else "ℹ️ 未使用 python cli.py run-phase（v7.5 前執行）",
+                detail="v7.5 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查" if not is_pre_v75 else "此專案在 v7.5 發布前執行，v7.5 run-phase 規定不適用",
             ))
 
     # ── C15: artifact_verification 強制欄位（v7.5 增強）──────────────
