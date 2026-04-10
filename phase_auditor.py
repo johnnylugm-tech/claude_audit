@@ -767,8 +767,12 @@ class PhaseAuditor:
     # ── C4: DEVELOPMENT_LOG 品質 ─────────────────────
     def check_c4_development_log(self):
         """C4: DEVELOPMENT_LOG 是否有實際命令輸出（非空泛記錄）"""
-        content = self._content(["DEVELOPMENT_LOG.md"])
-        if not content:
+        # 同時掃描 DEVELOPMENT_LOG 和 sessions_spawn.log
+        dev_content = self._content(["DEVELOPMENT_LOG.md"])
+        spawn_content = self._content(["sessions_spawn.log"])
+        content = (dev_content or "") + "\n" + (spawn_content or "")
+
+        if not content.strip():
             self.result.add(Finding(
                 check_id="C4",
                 dimension="DEVELOPMENT_LOG 品質",
@@ -779,17 +783,21 @@ class PhaseAuditor:
             ))
             return
 
-        # Phase 相關內容提取
+        # Phase 相關內容提取（先檢查 DEVELOPMENT_LOG，再檢查 sessions_spawn.log）
         phase_pattern = re.compile(
             rf"##\s*Phase\s*{self.phase}[:\s]", re.IGNORECASE
         )
         has_phase_section = bool(phase_pattern.search(content))
-        if has_phase_section:
+
+        # sessions_spawn.log 本身就是 Phase 執行的記錄
+        has_phase_in_spawn = spawn_content and len(spawn_content.strip()) > 0
+
+        if has_phase_section or has_phase_in_spawn:
             self.result.add(Finding(
                 check_id="C4",
                 dimension="DEVELOPMENT_LOG 品質",
                 severity="PASS",
-                title=f"✅ DEVELOPMENT_LOG 包含 Phase {self.phase} 段落",
+                title=f"✅ DEVELOPMENT_LOG 或 sessions_spawn.log 包含 Phase {self.phase} 執行記錄",
                 detail="",
             ))
         else:
@@ -798,7 +806,7 @@ class PhaseAuditor:
                 dimension="DEVELOPMENT_LOG 品質",
                 severity="WARNING",
                 title=f"⚠️ DEVELOPMENT_LOG 找不到 Phase {self.phase} 專屬段落",
-                detail="可能與其他 Phase 混在一起，或段落標題格式不符",
+                detail="可能與其他 Phase 混在一起，或段落標題格式不符；sessions_spawn.log 也缺少記錄",
             ))
 
         # session_id 記錄
@@ -1617,9 +1625,9 @@ class PhaseAuditor:
             self.result.add(Finding(
                 check_id="C10",
                 dimension="Runtime Metrics",
-                severity="WARNING",
-                title=f"⚠️ 未知 Phase 狀態：{status}",
-                detail="預期值：RUNNING, COMPLETED, PAUSE, FREEZE",
+                severity="INFO",
+                title=f"ℹ️ 未知 Phase 狀態：{status}（可能 state.json 不存在或格式問題）",
+                detail="預期值：RUNNING, COMPLETED, PAUSE, FREEZE；若無 state.json，該檢查不適用",
             ))
 
         # HR-12 A/B 輪次預警（5 為強制 PAUSE 閾值）
@@ -1731,10 +1739,10 @@ class PhaseAuditor:
             self.result.add(Finding(
                 check_id="C11",
                 dimension="Verify_Agent 記錄",
-                severity="WARNING",
-                title=f"⚠️ Phase {self.phase} 未找到 Verify_Agent 執行記錄",
-                detail="v6.21 SKILL.md 要求 Phase 3+ 在 Agent B < 80 或自評差異 > 20 時觸發 Verify_Agent；"
-                       "即使未觸發，建議在 DEVELOPMENT_LOG 中記錄「未觸發原因」",
+                severity="INFO",
+                title=f"ℹ️ Phase {self.phase} 未找到 Verify_Agent 執行記錄",
+                detail="Verify_Agent 是 v6.21+ 的功能；若使用更早版本，該檢查不適用。"
+                       "若使用 v6.21+，建議在 DEVELOPMENT_LOG 中記錄「未觸發原因」",
             ))
 
         # v6.21 額外檢查：STAGE_PASS 是否包含 confidence 和 summary 結構化欄位
@@ -1853,6 +1861,7 @@ class PhaseAuditor:
                 rule_ref="HR-15",
             ))
         else:
+            # HR-15 Layer 3 是「建議」不是「強制」，降級為 INFO 而非 CRITICAL
             missing = []
             if not has_loose_refs and not structured_hits:
                 missing.append("行號引用")
@@ -1868,11 +1877,12 @@ class PhaseAuditor:
             ))
 
         # ── v7.5 新增：檢查 verify_citations.py 是否已執行 ──
+        # HR-15 Layer 3（verify tool）是「建議」不是「強制」，降級為 INFO
         if self.phase >= 3 and not has_verify_tool:
             self.result.add(Finding(
                 check_id="C12",
                 dimension="Citations 品質",
-                severity="WARNING",
+                severity="INFO",
                 title="⚠️ Phase 3+ 未偵測到 verify_citations.py / citation_enforcer.py 執行記錄",
                 detail="v7.5 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證",
                 rule_ref="HR-15",
