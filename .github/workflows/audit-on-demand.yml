@@ -1,4 +1,4 @@
-name: Run Phase Audit (On Demand)
+name: Run Phase Audit (v6.109)
 
 on:
   workflow_dispatch:
@@ -23,58 +23,81 @@ jobs:
       contents: write
 
     env:
-      # Use GH_PAT if set, otherwise fall back to the built-in token (works for public repos)
+      # GitHub token for gh CLI (works for public repos)
       GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
-      # Opt into Node.js 24 to silence deprecation warnings
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
     steps:
       - name: Checkout claude_audit repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install gh CLI
+      - name: Verify gh CLI installed
         run: |
-          type -p gh >/dev/null 2>&1 && { echo "gh already installed"; gh --version; exit 0; }
-          type -p curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl)
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
-            sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
-            sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt-get update && sudo apt-get install -y gh
+          which gh >/dev/null 2>&1 && gh --version || echo "gh not in PATH, using fallback"
+          # GitHub Actions runners include gh CLI by default on ubuntu-latest
 
-      - name: Verify gh CLI auth
-        run: gh auth status
-
-      - name: Run audit
+      - name: Run audit (phase_auditor.py v6.109)
         id: audit
         run: |
-          chmod +x audit.sh
-          ./audit.sh \
+          python3 phase_auditor.py \
             --repo "${{ github.event.inputs.repo }}" \
             --phase "${{ github.event.inputs.phase }}" \
-            --branch "${{ github.event.inputs.branch }}"
+            --branch "${{ github.event.inputs.branch }}" \
+            --save "reports/audit_${{ github.event.inputs.repo }}_phase${{ github.event.inputs.phase }}.md"
         continue-on-error: true
 
+      - name: Extract verdict from report
+        id: verdict
+        run: |
+          REPORT=$(find reports/ -name "*.md" -newer phase_auditor.py 2>/dev/null | sort | tail -1)
+          if [ -z "$REPORT" ]; then
+            echo "VERDICT=ERROR (no report found)" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          # Extract verdict line (e.g., "| 裁決 | ❌ **不通過** |")
+          VERDICT=$(grep "^| 裁決" "$REPORT" | sed 's/.*\*\*\(.*\)\*\*.*/\1/' || echo "unknown")
+          echo "VERDICT=$VERDICT" >> $GITHUB_OUTPUT
+          echo "REPORT=$REPORT" >> $GITHUB_OUTPUT
+
       - name: Commit and push report
+        if: always()
         run: |
           git config user.name "claude-audit-bot"
           git config user.email "audit-bot@noreply.github.com"
-          git add reports/
+          git add -A reports/ || true
+
+          REPORT_FILE="${{ steps.verdict.outputs.REPORT }}"
+          VERDICT="${{ steps.verdict.outputs.VERDICT }}"
+
+          if [ -z "$VERDICT" ]; then
+            VERDICT="ERROR"
+          fi
+
           if git diff --cached --quiet; then
-            echo "No new report to commit."
+            echo "✅ No new report changes."
           else
-            # Safely extract verdict without glob expansion issues
-            REPORT_FILE=$(find reports/ -name "*.md" -newer audit.sh 2>/dev/null | sort | tail -1)
-            if [ -n "$REPORT_FILE" ]; then
-              VERDICT=$(grep "裁決" "$REPORT_FILE" | tail -1 | sed 's/.*\*\*\(.*\)\*\*.*/\1/' || echo "unknown")
-            else
-              VERDICT="unknown"
-            fi
             git commit -m "audit: ${{ github.event.inputs.repo }} phase ${{ github.event.inputs.phase }} (${{ github.event.inputs.branch }}) — ${VERDICT}"
             git push
+            echo "✅ Report committed and pushed."
+          fi
+
+      - name: Job summary
+        if: always()
+        run: |
+          REPORT_FILE="${{ steps.verdict.outputs.REPORT }}"
+          if [ -f "$REPORT_FILE" ]; then
+            echo "## Phase ${{ github.event.inputs.phase }} Audit Report" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Repo**: ${{ github.event.inputs.repo }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Verdict**: ${{ steps.verdict.outputs.VERDICT }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details><summary>Full Report</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            cat "$REPORT_FILE" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
           fi
