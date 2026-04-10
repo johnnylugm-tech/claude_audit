@@ -43,6 +43,7 @@ jobs:
       - name: Run audit (phase_auditor.py v7.5)
         id: audit
         run: |
+          set -e
           # Build proper report directory: reports/OWNER/REPO/BRANCH/
           REPO="${{ github.event.inputs.repo }}"
           OWNER=$(echo "$REPO" | cut -d/ -f1)
@@ -51,48 +52,63 @@ jobs:
           REPORT_DIR="reports/${OWNER}/${REPO_NAME}/${BRANCH}"
           mkdir -p "$REPORT_DIR"
           REPORT_FILE="${REPORT_DIR}/audit_phase${{ github.event.inputs.phase }}.md"
-          echo "REPORT_FILE=${REPORT_FILE}" >> $GITHUB_ENV
           python3 phase_auditor.py \
             --repo "$REPO" \
             --phase "${{ github.event.inputs.phase }}" \
             --branch "$BRANCH" \
             --save "${REPORT_FILE}"
+          # Export report path for downstream steps
+          echo "report_file=${REPORT_FILE}" >> $GITHUB_OUTPUT
         continue-on-error: true
 
       - name: Extract verdict from report
         id: verdict
         run: |
-          REPORT="${REPORT_FILE}"
-          if [ ! -f "$REPORT" ]; then
-            echo "❌ Report not found: $REPORT" >&2
-            echo "VERDICT=ERROR (file not found)" >> $GITHUB_OUTPUT
+          REPORT="${{ steps.audit.outputs.report_file }}"
+          if [ -z "$REPORT" ]; then
+            echo "❌ Audit failed or report path not exported" >&2
+            echo "VERDICT=ERROR" >> $GITHUB_OUTPUT
+            echo "REPORT=" >> $GITHUB_OUTPUT
             exit 1
           fi
-          # Extract verdict line (e.g., "| 裁決 | ❌ **不通過** |")
-          VERDICT=$(grep "^| 裁決" "$REPORT" | sed 's/.*\*\*\(.*\)\*\*.*/\1/' || echo "unknown")
+          if [ ! -f "$REPORT" ]; then
+            echo "❌ Report file not found: $REPORT" >&2
+            echo "VERDICT=ERROR" >> $GITHUB_OUTPUT
+            echo "REPORT=" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          # Extract verdict from table: "| 裁決 | ✅ **通過** |"
+          VERDICT=$(sed -n '/^| 裁決 |/p' "$REPORT" | sed 's/^|[^|]*|\s*//;s/\s*|$//' | sed 's/<[^>]*>//g' | xargs)
+          if [ -z "$VERDICT" ]; then
+            echo "❌ Failed to extract verdict from report" >&2
+            VERDICT="ERROR"
+          fi
           echo "VERDICT=$VERDICT" >> $GITHUB_OUTPUT
           echo "REPORT=$REPORT" >> $GITHUB_OUTPUT
 
       - name: Commit and push report
-        if: always()
+        if: steps.verdict.outcome == 'success'
         run: |
+          set -eo pipefail
           git config user.name "claude-audit-bot"
           git config user.email "audit-bot@noreply.github.com"
-          git add -A reports/ || true
+          git add reports/ || true
 
-          REPORT_FILE="${{ steps.verdict.outputs.REPORT }}"
           VERDICT="${{ steps.verdict.outputs.VERDICT }}"
 
-          if [ -z "$VERDICT" ]; then
-            VERDICT="ERROR"
-          fi
-
           if git diff --cached --quiet; then
-            echo "✅ No new report changes."
+            echo "✅ No new report changes to commit."
           else
-            git commit -m "audit: ${{ github.event.inputs.repo }} phase ${{ github.event.inputs.phase }} (${{ github.event.inputs.branch }}) — ${VERDICT}"
-            git push
-            echo "✅ Report committed and pushed."
+            git commit -m "audit: ${{ github.event.inputs.repo }} phase ${{ github.event.inputs.phase }} (${{ github.event.inputs.branch }}) — ${VERDICT}" || {
+              echo "⚠️ Commit failed (may be protected branch)"
+              exit 0
+            }
+            if git push; then
+              echo "✅ Report committed and pushed."
+            else
+              echo "❌ Push failed - check branch protection or auth" >&2
+              exit 1
+            fi
           fi
 
       - name: Job summary
