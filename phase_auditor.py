@@ -143,8 +143,9 @@ PHASE_SPEC = {
              "tests/ — 單元測試", True),
             (["DEVELOPMENT_LOG.md"], "DEVELOPMENT_LOG.md", True),
             (["sessions_spawn.log"], "sessions_spawn.log", True),
-            (["00-summary/Phase3_STAGE_PASS.md", "Phase3_STAGE_PASS.md"],
-             "Phase3_STAGE_PASS.md", True),
+            (["00-summary/Phase3_STAGE_PASS.md", "Phase3_STAGE_PASS.md",
+          "00-summary/Phase_3_-_實作_STAGE_PASS.md", "Phase_3_-_實作_STAGE_PASS.md"],
+             "Phase3_STAGE_PASS.md（或中文版）", True),
         ],
         "thresholds": {
             "TH-10": ("測試通過率", "=100%"),
