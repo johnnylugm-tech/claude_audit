@@ -43,15 +43,19 @@ jobs:
       - name: Run audit (phase_auditor.py v6.109)
         id: audit
         run: |
-          # Replace / with _ in repo name to avoid path issues
-          REPO_SAFE="${{ github.event.inputs.repo }}"
-          REPO_SAFE="${REPO_SAFE////_}"
-          REPORT_FILE="reports/audit_${REPO_SAFE}_phase${{ github.event.inputs.phase }}.md"
+          # Build proper report directory: reports/OWNER/REPO/BRANCH/
+          REPO="${{ github.event.inputs.repo }}"
+          OWNER=$(echo "$REPO" | cut -d/ -f1)
+          REPO_NAME=$(echo "$REPO" | cut -d/ -f2)
+          BRANCH="${{ github.event.inputs.branch }}"
+          REPORT_DIR="reports/${OWNER}/${REPO_NAME}/${BRANCH}"
+          mkdir -p "$REPORT_DIR"
+          REPORT_FILE="${REPORT_DIR}/audit_phase${{ github.event.inputs.phase }}.md"
           echo "REPORT_FILE=${REPORT_FILE}" >> $GITHUB_ENV
           python3 phase_auditor.py \
-            --repo "${{ github.event.inputs.repo }}" \
+            --repo "$REPO" \
             --phase "${{ github.event.inputs.phase }}" \
-            --branch "${{ github.event.inputs.branch }}" \
+            --branch "$BRANCH" \
             --save "${REPORT_FILE}"
         continue-on-error: true
 
