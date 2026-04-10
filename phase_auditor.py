@@ -2099,8 +2099,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         f"*由 phase_auditor.py 自動生成 | methodology-v2 v6.109*",
     ]
 
-    return "\
-".join(lines)
+    return "\n".join(lines)
 
 
 # ─────────────────────────────────────────────
