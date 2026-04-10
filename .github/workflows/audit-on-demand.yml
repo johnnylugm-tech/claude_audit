@@ -1,4 +1,4 @@
-name: Run Phase Audit (v6.109)
+name: Run Phase Audit (v7.5)
 
 on:
   workflow_dispatch:
@@ -40,7 +40,7 @@ jobs:
           which gh >/dev/null 2>&1 && gh --version || echo "gh not in PATH, using fallback"
           # GitHub Actions runners include gh CLI by default on ubuntu-latest
 
-      - name: Run audit (phase_auditor.py v6.109)
+      - name: Run audit (phase_auditor.py v7.5)
         id: audit
         run: |
           # Build proper report directory: reports/OWNER/REPO/BRANCH/
