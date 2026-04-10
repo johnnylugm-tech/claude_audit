@@ -20,6 +20,7 @@ phase_auditor.py — methodology-v2 v6.109 Phase Audit Engine
 import argparse
 import base64
 import json
+import logging
 import re
 import subprocess
 import sys
@@ -27,6 +28,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import quote
+
+# Configure logging for diagnostics
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 
 # ─────────────────────────────────────────────
@@ -409,7 +413,8 @@ class GitHubFetcher:
             content = base64.b64decode(data["content"]).decode("utf-8", errors="replace")
             self._file_cache[path] = content
             return content
-        except Exception:
+        except (base64.binascii.Error, UnicodeDecodeError, KeyError) as e:
+            logging.warning(f"Failed to decode {path}: {e}")
             self._file_cache[path] = None
             return None
 
@@ -433,7 +438,9 @@ class PhaseAuditor:
     def __init__(self, fetcher: GitHubFetcher, phase: int):
         self.gh = fetcher
         self.phase = phase
-        self.spec = PHASE_SPEC.get(phase, {})
+        if phase not in PHASE_SPEC:
+            raise ValueError(f"Unsupported phase: {phase}. Supported: 1-8")
+        self.spec = PHASE_SPEC[phase]
         self.result = AuditResult(
             repo=fetcher.repo,
             phase=phase,
@@ -648,10 +655,10 @@ class PhaseAuditor:
                 continue
             try:
                 sessions.append(json.loads(line))
-            except json.JSONDecodeError:
-                # 嘗試簡單解析
-                if "session_id" in line:
-                    sessions.append({"raw": line})
+            except json.JSONDecodeError as e:
+                # Skip invalid lines with diagnostic logging
+                logging.debug(f"Invalid session JSON: {line[:50]}... ({e})")
+                # Don't create partial structures; skip entirely
 
         if not sessions:
             self.result.add(Finding(
@@ -1176,7 +1183,7 @@ class PhaseAuditor:
         ]
         phase_commits = [
             c for c in commits
-            if any(kw.lower() in c.get("commit", {}).get("message", "").lower()
+            if isinstance(c, dict) and any(kw.lower() in c.get("commit", {}).get("message", "").lower()
                    for kw in phase_keywords)
         ]
 
@@ -1202,7 +1209,7 @@ class PhaseAuditor:
                     try:
                         times.append(datetime.fromisoformat(ts.replace("Z", "+00:00")))
                     except ValueError:
-                        pass
+                        logging.debug(f"Invalid ISO timestamp format: {ts}")
             if len(times) >= 2:
                 times.sort()
                 duration_min = (times[-1] - times[0]).total_seconds() / 60
@@ -1227,7 +1234,7 @@ class PhaseAuditor:
         # 重複 commit 檢查（多次 fix 代表迭代修復，是正常的）
         fix_commits = [
             c for c in phase_commits
-            if "fix" in c.get("commit", {}).get("message", "").lower()
+            if isinstance(c, dict) and "fix" in c.get("commit", {}).get("message", "").lower()
         ]
         if fix_commits:
             self.result.add(Finding(
@@ -1269,8 +1276,7 @@ class PhaseAuditor:
             # 優先匹配 "Constitution Score: ✅ 85.7%" 或 "Constitution Score: 85.7%"
             r"Constitution\s+Score.*?([\d.]+)%",
             # 備用：只有 "Constitution" 開頭的行（但排除「信心分數」）
-            r"(?:^|\
-)Constitution[^信心].*?([\d.]+)%",
+            r"(?:^|\n)Constitution[^信心].*?([\d.]+)%",
         ]:
             m = re.search(pat, sp_content, re.IGNORECASE | re.MULTILINE)
             if m:
@@ -1278,14 +1284,14 @@ class PhaseAuditor:
                     const_claimed = float(m.group(1))
                     break
                 except ValueError:
+                    logging.debug(f"Failed to parse Constitution from '{m.group(1)}'")
                     pass
 
         # 從 DEVELOPMENT_LOG 抓 Constitution 值
         const_log = None
         for pat in [
             r"Constitution\s+Score.*?([\d.]+)%",
-            r"(?:^|\
-)Constitution[^信心].*?([\d.]+)%",
+            r"(?:^|\n)Constitution[^信心].*?([\d.]+)%",
         ]:
             m = re.search(pat, dev_content, re.IGNORECASE | re.MULTILINE)
             if m:
@@ -1293,6 +1299,7 @@ class PhaseAuditor:
                     const_log = float(m.group(1))
                     break
                 except ValueError:
+                    logging.debug(f"Failed to parse Constitution from DEVELOPMENT_LOG: '{m.group(1)}'")
                     pass
 
         if const_claimed is not None and const_log is not None:
@@ -2075,7 +2082,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         ]
         for i, f in enumerate(criticals, 1):
             lines.append(f"{i}. **[CRITICAL]** {f.title.lstrip('❌ ')}")
-            if f.detail:
+            if f.detail and f.detail.splitlines():
                 lines.append(f"   - {f.detail.splitlines()[0]}")
         for i, f in enumerate(warnings, len(criticals) + 1):
             lines.append(f"{i}. **[WARNING]** {f.title.lstrip('⚠️ ')}")
