@@ -132,7 +132,7 @@ PHASE_SPEC = {
     },
     3: {
         "name": "代碼實現",
-        "agent_a": "architect",
+        "agent_a": "developer",
         "agent_b": "reviewer",
         "ab_rounds": -1,  # 每模組一次
         "constitution_type": "implementation",
