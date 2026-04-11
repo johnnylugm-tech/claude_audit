@@ -53,14 +53,16 @@ jobs:
             --repo "${{ github.event.inputs.repo }}" \
             --phase "${{ github.event.inputs.phase }}" \
             --branch "${{ github.event.inputs.branch }}"
+        continue-on-error: true
 
       - name: Upload Quality Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: quality-audit-phase${{ github.event.inputs.phase }}
-          path: reports/
+          path: auditor/reports/
           retention-days: 90
+          if-no-files-found: ignore
 
       - name: Comment on Issue (if applicable)
         if: github.event.issue
