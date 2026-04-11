@@ -31,10 +31,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout phase-auditor
+      - name: Checkout quality_scorer
         uses: actions/checkout@v4
         with:
-          repository: johnnylugm-tech/methodology-v2
+          repository: johnnylugm-tech/claude_audit
           path: auditor
           sparse-checkout: |
             quality_scorer.py
