@@ -1,0 +1,80 @@
+name: Quality Audit (Content Quality Scorer)
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Target repo (owner/repo)'
+        required: true
+        default: 'johnnylugm-tech/tts-kokoro-v613'
+      phase:
+        description: 'Phase to audit (1-8)'
+        required: true
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+          - '4'
+          - '5'
+          - '6'
+          - '7'
+          - '8'
+      branch:
+        description: 'Branch to audit'
+        required: false
+        default: 'main'
+
+jobs:
+  quality-audit:
+    name: Quality Score Phase ${{ github.event.inputs.phase }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout phase-auditor
+        uses: actions/checkout@v4
+        with:
+          repository: johnnylugm-tech/methodology-v2
+          path: auditor
+          sparse-checkout: |
+            quality_scorer.py
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Run Quality Audit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd auditor
+          python3 quality_scorer.py \
+            --repo "${{ github.event.inputs.repo }}" \
+            --phase "${{ github.event.inputs.phase }}" \
+            --branch "${{ github.event.inputs.branch }}"
+
+      - name: Upload Quality Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-audit-phase${{ github.event.inputs.phase }}
+          path: reports/
+          retention-days: 90
+
+      - name: Comment on Issue (if applicable)
+        if: github.event.issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = `reports/quality_phase${{ github.event.inputs.phase }}.md`;
+            if (fs.existsSync(reportPath)) {
+              const report = fs.readFileSync(reportPath, 'utf8');
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '## Quality Audit Result\n\n' + report
+              });
+            }

@@ -422,6 +422,456 @@ class QualityScorerPhase3:
 
 
 # ─────────────────────────────────────────────
+# 3B. 品質檢查實現（Phase 1 — 需求）
+# ─────────────────────────────────────────────
+
+class QualityScorerPhase1:
+    """Phase 1 (需求規格) 品質評分器"""
+
+    def __init__(self, gh_fetcher: GitHubFetcher):
+        self.gh = gh_fetcher
+
+    def check_all(self) -> list[QualityCheck]:
+        """執行所有 Phase 1 品質檢查"""
+        checks = []
+        checks.append(self.check_aspice_compliance())
+        checks.append(self.check_spec_completeness())
+        checks.append(self.check_constitution_correctness())
+        return checks
+
+    def check_aspice_compliance(self) -> QualityCheck:
+        """TH-01: ASPICE 合規性檢查（SRS 文件結構）"""
+        srs_path = self.gh.resolve_path([
+            "01-requirements/SRS.md",
+            "requirements/SRS.md",
+            "SRS.md",
+            "docs/SRS.md"
+        ])
+
+        if not srs_path:
+            return QualityCheck(
+                check_id="TH-01",
+                dimension="ASPICE 合規性",
+                severity="CRITICAL",
+                actual_value="N/A",
+                threshold=">80%",
+                detail="找不到 SRS.md 文件",
+                passed=False,
+                rule_ref="TH-01"
+            )
+
+        content = self.gh.get_file_content(srs_path)
+        if not content:
+            return QualityCheck(
+                check_id="TH-01",
+                dimension="ASPICE 合規性",
+                severity="CRITICAL",
+                actual_value="0%",
+                threshold=">80%",
+                detail="無法讀取 SRS.md 內容",
+                passed=False,
+                rule_ref="TH-01"
+            )
+
+        # Check for required ASPICE sections (flexible patterns)
+        required_sections = [
+            [r"##\s+\d*\.?\s*功能需求", r"##\s+[Ff]unctional\s+[Rr]equirements"],  # Functional Requirements
+            [r"##\s+\d*\.?\s*非功能需求", r"##\s+[Nn]on-[Ff]unctional\s+[Rr]equirements"],  # Non-Functional
+            [r"##\s+\d*\.?\s*(追溯|追蹤|需求追蹤|追溯性)", r"##\s+[Tt]raceability"],  # Traceability
+        ]
+
+        found_sections = 0
+        for patterns in required_sections:
+            found = False
+            for pattern in patterns:
+                if re.search(pattern, content, re.IGNORECASE):
+                    found = True
+                    break
+            if found:
+                found_sections += 1
+
+        compliance = (found_sections / len(required_sections)) * 100
+        passed = compliance > 80
+
+        return QualityCheck(
+            check_id="TH-01",
+            dimension="ASPICE 合規性",
+            severity="PASS" if passed else "WARNING",
+            actual_value=compliance,
+            threshold=">80%",
+            detail=f"發現 {found_sections}/{len(required_sections)} 個必要章節（{compliance:.1f}%）",
+            passed=passed,
+            rule_ref="TH-01"
+        )
+
+    def check_spec_completeness(self) -> QualityCheck:
+        """TH-14: 規格完整性檢查"""
+        srs_path = self.gh.resolve_path([
+            "01-requirements/SRS.md",
+            "requirements/SRS.md",
+            "SRS.md",
+            "docs/SRS.md"
+        ])
+
+        if not srs_path:
+            return QualityCheck(
+                check_id="TH-14",
+                dimension="規格完整性",
+                severity="CRITICAL",
+                actual_value="N/A",
+                threshold="≥90%",
+                detail="找不到 SRS.md 文件",
+                passed=False,
+                rule_ref="TH-14"
+            )
+
+        content = self.gh.get_file_content(srs_path)
+        if not content:
+            return QualityCheck(
+                check_id="TH-14",
+                dimension="規格完整性",
+                severity="CRITICAL",
+                actual_value="0%",
+                threshold="≥90%",
+                detail="無法讀取 SRS.md 內容",
+                passed=False,
+                rule_ref="TH-14"
+            )
+
+        # Count FR definitions in functional requirements section only (FR-01, FR-001, etc.)
+        # Extract only functional requirements section (between ## 2. 功能需求 and ## 3.)
+        fr_section = re.search(r"##\s+\d*\.?\s*功能需求[\s\S]*?(?=\n##\s+|\Z)", content, re.IGNORECASE | re.DOTALL)
+
+        if fr_section:
+            fr_content = fr_section.group()
+            fr_pattern = r"FR-\d+"
+            fr_matches = re.findall(fr_pattern, fr_content, re.IGNORECASE)
+            fr_count = len(set(fr_matches))  # Unique FR IDs
+
+            # Count FR with descriptions (### FR-XX: description or similar)
+            fr_with_desc = re.findall(r"(?:###|###+)\s+FR-\d+[：:][^#\n]", fr_content, re.IGNORECASE)
+            completeness = (len(fr_with_desc) / fr_count * 100) if fr_count > 0 else 0
+        else:
+            fr_count = 0
+            completeness = 0
+
+        passed = completeness >= 90
+
+        if fr_section:
+            fr_with_desc_count = int(fr_count * completeness / 100)
+            detail_text = f"發現 {fr_count} 個 FR，其中 {fr_with_desc_count} 個完整定義（{completeness:.1f}%）"
+        else:
+            detail_text = "無法解析需求"
+
+        return QualityCheck(
+            check_id="TH-14",
+            dimension="規格完整性",
+            severity="PASS" if passed else "WARNING",
+            actual_value=completeness,
+            threshold="≥90%",
+            detail=detail_text,
+            passed=passed,
+            rule_ref="TH-14"
+        )
+
+    def check_constitution_correctness(self) -> QualityCheck:
+        """TH-03: 憲法正確性檢查（需求定義格式）"""
+        srs_path = self.gh.resolve_path([
+            "01-requirements/SRS.md",
+            "requirements/SRS.md",
+            "SRS.md",
+            "docs/SRS.md"
+        ])
+
+        if not srs_path:
+            return QualityCheck(
+                check_id="TH-03",
+                dimension="憲法正確性",
+                severity="INFO",
+                actual_value="N/A",
+                threshold="=100%",
+                detail="找不到 SRS.md 文件",
+                passed=True,
+                rule_ref="TH-03"
+            )
+
+        content = self.gh.get_file_content(srs_path)
+        if not content:
+            return QualityCheck(
+                check_id="TH-03",
+                dimension="憲法正確性",
+                severity="INFO",
+                actual_value="N/A",
+                threshold="=100%",
+                detail="無法讀取 SRS.md 內容",
+                passed=True,
+                rule_ref="TH-03"
+            )
+
+        # Check for testable requirements (contain "shall", "must", "should", "will")
+        fr_pattern = r"FR-\d+\s*[：:]\s*(.+?)(?=\n(?:FR-\d|$))"
+        fr_entries = re.findall(fr_pattern, content, re.IGNORECASE | re.DOTALL)
+
+        if not fr_entries:
+            return QualityCheck(
+                check_id="TH-03",
+                dimension="憲法正確性",
+                severity="INFO",
+                actual_value="N/A",
+                threshold="=100%",
+                detail="找不到 FR 定義",
+                passed=True,
+                rule_ref="TH-03"
+            )
+
+        testable_keywords = ["shall", "must", "should", "will", "需", "應", "必須"]
+        testable_count = 0
+
+        for entry in fr_entries:
+            # Check if requirement is testable
+            if any(keyword in entry.lower() for keyword in testable_keywords):
+                testable_count += 1
+
+        correctness = (testable_count / len(fr_entries)) * 100 if fr_entries else 0
+        passed = correctness >= 90
+
+        return QualityCheck(
+            check_id="TH-03",
+            dimension="憲法正確性",
+            severity="PASS" if passed else "WARNING",
+            actual_value=correctness,
+            threshold="≥90% 可測試",
+            detail=f"{testable_count}/{len(fr_entries)} 個需求可測試（{correctness:.1f}%）",
+            passed=passed,
+            rule_ref="TH-03"
+        )
+
+
+# ─────────────────────────────────────────────
+# 3C. 品質檢查實現（Phase 2 — 架構）
+# ─────────────────────────────────────────────
+
+class QualityScorerPhase2:
+    """Phase 2 (架構設計) 品質評分器"""
+
+    def __init__(self, gh_fetcher: GitHubFetcher):
+        self.gh = gh_fetcher
+
+    def check_all(self) -> list[QualityCheck]:
+        """執行所有 Phase 2 品質檢查"""
+        checks = []
+        checks.append(self.check_aspice_compliance())
+        checks.append(self.check_maintainability())
+        checks.append(self.check_constitution_correctness())
+        return checks
+
+    def check_aspice_compliance(self) -> QualityCheck:
+        """TH-01: ASPICE 合規性檢查（SAD 文件結構）"""
+        sad_path = self.gh.resolve_path([
+            "02-architecture/SAD.md",
+            "architecture/SAD.md",
+            "SAD.md",
+            "docs/SAD.md"
+        ])
+
+        if not sad_path:
+            return QualityCheck(
+                check_id="TH-01",
+                dimension="ASPICE 合規性",
+                severity="CRITICAL",
+                actual_value="N/A",
+                threshold=">80%",
+                detail="找不到 SAD.md 文件",
+                passed=False,
+                rule_ref="TH-01"
+            )
+
+        content = self.gh.get_file_content(sad_path)
+        if not content:
+            return QualityCheck(
+                check_id="TH-01",
+                dimension="ASPICE 合規性",
+                severity="CRITICAL",
+                actual_value="0%",
+                threshold=">80%",
+                detail="無法讀取 SAD.md 內容",
+                passed=False,
+                rule_ref="TH-01"
+            )
+
+        # Check for required ASPICE sections in SAD (flexible patterns)
+        required_sections = [
+            [r"##\s+\d*\.?\s*系統(上下文|架構|概覽|設計)", r"##\s+[Aa]rchitecture|[Oo]verview"],  # Architecture Overview
+            [r"##\s+\d*\.?\s*([Ll]ayer|層級|模組|元件)", r"##\s+[Cc]omponent|[Mm]odule"],  # Components
+            [r"##\s+\d*\.?\s*([Ii]nterface|介面|[Aa]PI)", r"##\s+[Ii]nterface|[Aa]PI"],  # Interfaces
+        ]
+
+        found_sections = 0
+        for patterns in required_sections:
+            found = False
+            for pattern in patterns:
+                if re.search(pattern, content, re.IGNORECASE):
+                    found = True
+                    break
+            if found:
+                found_sections += 1
+
+        compliance = (found_sections / len(required_sections)) * 100
+        passed = compliance > 80
+
+        return QualityCheck(
+            check_id="TH-01",
+            dimension="ASPICE 合規性",
+            severity="PASS" if passed else "WARNING",
+            actual_value=compliance,
+            threshold=">80%",
+            detail=f"發現 {found_sections}/{len(required_sections)} 個必要章節（{compliance:.1f}%）",
+            passed=passed,
+            rule_ref="TH-01"
+        )
+
+    def check_maintainability(self) -> QualityCheck:
+        """TH-05: 可維護性檢查（ADR 分析）"""
+        sad_path = self.gh.resolve_path([
+            "02-architecture/SAD.md",
+            "architecture/SAD.md",
+            "SAD.md",
+            "docs/SAD.md"
+        ])
+
+        if not sad_path:
+            return QualityCheck(
+                check_id="TH-05",
+                dimension="可維護性",
+                severity="INFO",
+                actual_value="N/A",
+                threshold=">70%",
+                detail="找不到 SAD.md 文件",
+                passed=True,
+                rule_ref="TH-05"
+            )
+
+        content = self.gh.get_file_content(sad_path)
+        if not content:
+            return QualityCheck(
+                check_id="TH-05",
+                dimension="可維護性",
+                severity="INFO",
+                actual_value="N/A",
+                threshold=">70%",
+                detail="無法讀取 SAD.md 內容",
+                passed=True,
+                rule_ref="TH-05"
+            )
+
+        # Count ADR (Architecture Decision Record) entries
+        # Patterns: ADR-01, ADR-001, etc.
+        adr_pattern = r"ADR-\d+"
+        adr_matches = re.findall(adr_pattern, content, re.IGNORECASE)
+        adr_count = len(set(adr_matches))
+
+        # Check for ADRs with status (Accepted, Pending, Deprecated, Rejected)
+        # Pattern: | ADR-XXX | title | description | Status | Date |
+        adr_with_status = re.findall(
+            r"\|\s*ADR-\d+\s*\|[^|]*\|[^|]*\|\s*(?:Accepted|Pending|Deprecated|Rejected|接受|待定|廢棄|拒絕)",
+            content, re.IGNORECASE
+        )
+
+        if adr_count == 0:
+            maintainability = 50  # Base score if no ADRs yet
+        else:
+            # Score based on how many ADRs have documented status
+            maintainability = (len(adr_with_status) / adr_count) * 100
+
+        passed = maintainability > 70
+
+        return QualityCheck(
+            check_id="TH-05",
+            dimension="可維護性",
+            severity="PASS" if passed else "WARNING",
+            actual_value=maintainability,
+            threshold=">70%",
+            detail=f"發現 {adr_count} 個 ADR，其中 {len(adr_with_status)} 個有狀態記錄（{maintainability:.1f}%）",
+            passed=passed,
+            rule_ref="TH-05"
+        )
+
+    def check_constitution_correctness(self) -> QualityCheck:
+        """TH-03: 憲法正確性檢查（設計決策品質）"""
+        sad_path = self.gh.resolve_path([
+            "02-architecture/SAD.md",
+            "architecture/SAD.md",
+            "SAD.md",
+            "docs/SAD.md"
+        ])
+
+        if not sad_path:
+            return QualityCheck(
+                check_id="TH-03",
+                dimension="憲法正確性",
+                severity="INFO",
+                actual_value="N/A",
+                threshold="≥80%",
+                detail="找不到 SAD.md 文件",
+                passed=True,
+                rule_ref="TH-03"
+            )
+
+        content = self.gh.get_file_content(sad_path)
+        if not content:
+            return QualityCheck(
+                check_id="TH-03",
+                dimension="憲法正確性",
+                severity="INFO",
+                actual_value="N/A",
+                threshold="≥80%",
+                detail="無法讀取 SAD.md 內容",
+                passed=True,
+                rule_ref="TH-03"
+            )
+
+        # Extract ADR table rows for quality analysis
+        # Pattern: | ADR-XXX | title | description | status | date |
+        adr_rows = re.findall(
+            r"\|\s*ADR-\d+\s*\|([^|]*)\|([^|]*)\|([^|]*)\|",
+            content, re.IGNORECASE
+        )
+
+        if not adr_rows:
+            return QualityCheck(
+                check_id="TH-03",
+                dimension="憲法正確性",
+                severity="INFO",
+                actual_value="N/A",
+                threshold="≥80%",
+                detail="找不到 ADR 表格",
+                passed=True,
+                rule_ref="TH-03"
+            )
+
+        # Check if each ADR has meaningful description (> 15 chars)
+        quality_count = 0
+        for title, description, status in adr_rows:
+            # Check if description is meaningful (not just empty or whitespace)
+            if description.strip() and len(description.strip()) > 15:
+                quality_count += 1
+
+        correctness = (quality_count / len(adr_rows) * 100) if adr_rows else 0
+        passed = correctness >= 80
+
+        return QualityCheck(
+            check_id="TH-03",
+            dimension="憲法正確性",
+            severity="PASS" if passed else "WARNING",
+            actual_value=correctness,
+            threshold="≥80% 完整記錄",
+            detail=f"{quality_count}/{len(adr_rows)} 個設計決策有完整說明（{correctness:.1f}%）",
+            passed=passed,
+            rule_ref="TH-03"
+        )
+
+
+# ─────────────────────────────────────────────
 # 4. 主評分器
 # ─────────────────────────────────────────────
 
@@ -429,8 +879,8 @@ class QualityScorer:
     """統一品質評分入口"""
 
     PHASE_SPECS = {
-        1: {"name": "需求", "checks": []},  # Phase 2+ 將擴展
-        2: {"name": "架構", "checks": []},
+        1: {"name": "需求", "checks": ["TH-01", "TH-03", "TH-14"]},
+        2: {"name": "架構", "checks": ["TH-01", "TH-03", "TH-05"]},
         3: {"name": "代碼實現", "checks": ["TH-06", "TH-10", "TH-11", "TH-16"]},
         4: {"name": "測試", "checks": []},
         5: {"name": "交付", "checks": []},
@@ -457,8 +907,22 @@ class QualityScorer:
             score_time=datetime.now(timezone.utc).isoformat()
         )
 
-        # Phase 3 MVP: 執行品質檢查
-        if self.phase == 3:
+        # Phase 1: 需求規格檢查
+        if self.phase == 1:
+            scorer = QualityScorerPhase1(self.gh)
+            checks = scorer.check_all()
+            for check in checks:
+                result.add(check)
+
+        # Phase 2: 架構設計檢查
+        elif self.phase == 2:
+            scorer = QualityScorerPhase2(self.gh)
+            checks = scorer.check_all()
+            for check in checks:
+                result.add(check)
+
+        # Phase 3: 代碼實現檢查
+        elif self.phase == 3:
             scorer = QualityScorerPhase3(self.gh)
             checks = scorer.check_all()
             for check in checks:
