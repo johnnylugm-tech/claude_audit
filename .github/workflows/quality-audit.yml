@@ -29,15 +29,12 @@ jobs:
   quality-audit:
     name: Quality Score Phase ${{ github.event.inputs.phase }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout quality_scorer
+      - name: Checkout claude_audit
         uses: actions/checkout@v4
-        with:
-          repository: johnnylugm-tech/claude_audit
-          path: auditor
-          sparse-checkout: |
-            quality_scorer.py
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -45,38 +42,112 @@ jobs:
           python-version: '3.10'
 
       - name: Run Quality Audit
+        id: audit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd auditor
+          # Build report path
+          REPO="${{ github.event.inputs.repo }}"
+          OWNER=$(echo "$REPO" | cut -d/ -f1)
+          REPO_NAME=$(echo "$REPO" | cut -d/ -f2)
+          BRANCH="${{ github.event.inputs.branch }}"
+          REPORT_DIR="reports/${OWNER}/${REPO_NAME}/${BRANCH}"
+          mkdir -p "$REPORT_DIR"
+          REPORT_FILE="${REPORT_DIR}/quality_phase${{ github.event.inputs.phase }}.md"
+
+          echo "report_file=${REPORT_FILE}" >> $GITHUB_OUTPUT
+
           python3 quality_scorer.py \
-            --repo "${{ github.event.inputs.repo }}" \
+            --repo "$REPO" \
             --phase "${{ github.event.inputs.phase }}" \
-            --branch "${{ github.event.inputs.branch }}"
+            --branch "$BRANCH" \
+            && SCORE_RC=$? || SCORE_RC=$?
+
+          echo "score_rc=${SCORE_RC}" >> $GITHUB_OUTPUT
+
+          # Check if report was created
+          if [ -f "$REPORT_FILE" ]; then
+            echo "✅ Report generated: $REPORT_FILE"
+          else
+            echo "⚠️ Report file not found at $REPORT_FILE"
+          fi
         continue-on-error: true
 
-      - name: Upload Quality Report
+      - name: Extract score from report
+        id: score
+        run: |
+          REPORT="${{ steps.audit.outputs.report_file }}"
+          if [ ! -f "$REPORT" ]; then
+            echo "SCORE=ERROR" >> $GITHUB_OUTPUT
+            echo "VERDICT=❌ 報告生成失敗" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Extract score: "| 品質分數 | **X / 100** |"
+          SCORE=$(sed -n '/品質分數/p' "$REPORT" | sed 's/.*\*\*\([^/]*\).*/\1/' | xargs)
+          VERDICT=$(sed -n '/裁決/p' "$REPORT" | sed 's/.*| \(.*\) |$/\1/' | xargs)
+
+          echo "SCORE=${SCORE:-ERROR}" >> $GITHUB_OUTPUT
+          echo "VERDICT=${VERDICT:-UNKNOWN}" >> $GITHUB_OUTPUT
+          echo "✅ Score: ${SCORE}/100 | Verdict: $VERDICT"
+
+      - name: Commit and push report
+        if: steps.audit.outputs.report_file != ''
+        run: |
+          set -eo pipefail
+          git config user.name "claude-audit-bot"
+          git config user.email "audit-bot@noreply.github.com"
+
+          REPORT_FILE="${{ steps.audit.outputs.report_file }}"
+          if [ -f "$REPORT_FILE" ]; then
+            git add "$REPORT_FILE"
+
+            if git diff --cached --quiet; then
+              echo "✅ No changes to commit."
+            else
+              REPO="${{ github.event.inputs.repo }}"
+              PHASE="${{ github.event.inputs.phase }}"
+              VERDICT="${{ steps.score.outputs.VERDICT }}"
+
+              git commit -m "quality: $REPO phase $PHASE — $VERDICT"
+              git push
+              echo "✅ Report committed and pushed."
+            fi
+          else
+            echo "⚠️ Report file not found, skipping commit."
+          fi
+        continue-on-error: true
+
+      - name: Job Summary
+        if: always()
+        run: |
+          REPORT_FILE="${{ steps.audit.outputs.report_file }}"
+          SCORE="${{ steps.score.outputs.SCORE }}"
+          VERDICT="${{ steps.score.outputs.VERDICT }}"
+
+          echo "## Phase ${{ github.event.inputs.phase }} 品質評分" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**專案**: ${{ github.event.inputs.repo }}" >> $GITHUB_STEP_SUMMARY
+          echo "**分支**: ${{ github.event.inputs.branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "**品質分數**: $SCORE / 100" >> $GITHUB_STEP_SUMMARY
+          echo "**裁決**: $VERDICT" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "$REPORT_FILE" ]; then
+            echo "<details><summary>📋 完整報告</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            cat "$REPORT_FILE" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ 無法找到報告檔案" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Quality Report (Artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: quality-audit-phase${{ github.event.inputs.phase }}
-          path: auditor/reports/
+          path: reports/
           retention-days: 90
           if-no-files-found: ignore
-
-      - name: Comment on Issue (if applicable)
-        if: github.event.issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const reportPath = `reports/quality_phase${{ github.event.inputs.phase }}.md`;
-            if (fs.existsSync(reportPath)) {
-              const report = fs.readFileSync(reportPath, 'utf8');
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: '## Quality Audit Result\n\n' + report
-              });
-            }
