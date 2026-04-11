@@ -266,7 +266,8 @@ class QualityScorerPhase3:
                 failed_count = int(failed.group(1)) if failed else 0
                 error_count = int(errors.group(1)) if errors else 0
 
-                all_passed = (failed_count == 0 and error_count == 0)
+                # TH-10: 必須至少有1個測試通過，且0個失敗
+                all_passed = (passed_count > 0 and failed_count == 0 and error_count == 0)
                 detail = f"{passed_count} passed"
                 if failed_count > 0:
                     detail += f", {failed_count} failed"
@@ -934,7 +935,16 @@ class QualityScorer:
             passed_count = len(result.passes())
             total_count = len(result.checks)
             result.overall_score = (passed_count / total_count) * 100
-            result.verdict = "PASS" if len(result.criticals()) == 0 else "FAIL"
+
+            # 根據評分和CRITICAL問題決定裁決
+            if len(result.criticals()) > 0:
+                result.verdict = "FAIL"
+            elif result.overall_score >= 80:
+                result.verdict = "PASS"
+            elif result.overall_score >= 50:
+                result.verdict = "WARNING"
+            else:
+                result.verdict = "FAIL"
 
         return result
 
