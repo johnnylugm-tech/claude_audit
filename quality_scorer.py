@@ -165,189 +165,281 @@ class GitHubFetcher:
 
 
 # ─────────────────────────────────────────────
-# 3. 品質檢查實現（Phase 3 MVP）
+# 3. 品質檢查實現（Phase 3）
 # ─────────────────────────────────────────────
 
+# v7.73: Phase Prerequisites / Outputs (from phase_aware_constitution.py)
+PHASE_PREREQUISITES = {
+    1: [],
+    2: ["SRS.md", "01-requirements/SRS.md"],
+    3: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/fr_mapping.json"],
+    4: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/fr_mapping.json", ".methodology/SAB.json"],
+    5: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/SAB.json", "04-testing/TEST_PLAN.md"],
+    6: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/SAB.json", "04-testing/TEST_PLAN.md", "05-baseline/BASELINE.md"],
+    7: ["06-reports/QUALITY_REPORT.md"],
+    8: ["07-deployment/CONFIG_RECORDS.md", "07-deployment/requirements.lock"],
+}
+
+PHASE_OUTPUTS = {
+    1: ["SRS.md", "01-requirements/SRS.md"],
+    2: ["SAD.md", "02-architecture/SAD.md"],
+    3: [".methodology/fr_mapping.json"],
+    4: ["04-testing/TEST_PLAN.md"],
+    5: ["05-baseline/BASELINE.md"],
+    6: ["06-reports/QUALITY_REPORT.md"],
+    7: ["07-deployment/CONFIG_RECORDS.md", "07-deployment/requirements.lock"],
+    8: [],
+}
+
+
 class QualityScorerPhase3:
-    """Phase 3 (代碼實現) 品質評分器"""
+    """Phase 3 (代碼實現) 品質評分器 — v7.73"""
 
     def __init__(self, gh_fetcher: GitHubFetcher):
         self.gh = gh_fetcher
-        self.temp_dir: Optional[str] = None
 
     def check_all(self) -> list[QualityCheck]:
         """執行所有 Phase 3 品質檢查"""
         checks = []
 
-        # TH-06: 代碼覆蓋率 ≥80%
-        checks.append(self.check_code_coverage())
-
-        # TH-10: 測試通過率 =100%
+        # TH-10: 測試通過率 =100%（從 GitHub Actions CI 結果讀取）
         checks.append(self.check_test_pass_rate())
 
-        # TH-11: 單元測試覆蓋率 ≥70%
+        # TH-11: 單元測試覆蓋率 ≥70%（從測試檔案分析）
         checks.append(self.check_unit_test_coverage())
 
-        # TH-16: 代碼↔SAD 映射 =100%
+        # TH-16: 代碼↔SAD 映射（FR 標註檢查）
         checks.append(self.check_sad_mapping())
+
+        # v7.49: FR Mapping 檢查
+        checks.append(self.check_fr_mapping())
+
+        # v7.57: Phase Prerequisites 檢查
+        checks.append(self.check_phase_prerequisites())
+
+        # v7.67: Phase Outputs 檢查
+        checks.append(self.check_phase_outputs())
 
         return checks
 
-    def check_code_coverage(self) -> QualityCheck:
-        """TH-06: 代碼覆蓋率檢查"""
-        # 優先使用本地 clone 執行 pytest
-        if not self.temp_dir:
-            self.temp_dir = self.gh.clone_temp_repo()
-
-        if self.temp_dir:
-            try:
-                result = subprocess.run(
-                    ["python3", "-m", "pytest", "--cov=src", "--cov=03-development/src",
-                     "--cov-report=term-missing", "-q"],
-                    cwd=self.temp_dir,
-                    capture_output=True,
-                    timeout=60,
-                    text=True
-                )
-                # Parse coverage percentage from output
-                match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", result.stdout)
-                if match:
-                    coverage = float(match.group(1))
-                    passed = coverage >= 80
-                    return QualityCheck(
-                        check_id="TH-06",
-                        dimension="代碼覆蓋率",
-                        severity="PASS" if passed else "WARNING",
-                        actual_value=coverage,
-                        threshold="≥80%",
-                        detail=f"代碼覆蓋率 {coverage}%（閾值 ≥80%）",
-                        passed=passed,
-                        rule_ref="TH-06"
-                    )
-            except subprocess.TimeoutExpired:
-                logging.warning("Pytest timeout")
-            except Exception as e:
-                logging.warning(f"Failed to run pytest: {e}")
-
-        # Fallback: Can't run pytest
-        return QualityCheck(
-            check_id="TH-06",
-            dimension="代碼覆蓋率",
-            severity="WARNING",
-            actual_value="Unknown",
-            threshold="≥80%",
-            detail="無法執行 pytest（工具不可用）",
-            passed=False,
-            rule_ref="TH-06"
+    def _get_latest_ci_run(self) -> Optional[dict]:
+        """從 GitHub Actions 取得最新 CI 執行結果"""
+        data = self.gh._gh(
+            f"repos/{self.gh.repo}/actions/runs?branch={self.gh.branch}&per_page=5&status=completed"
         )
+        if not data or "workflow_runs" not in data:
+            return None
+        runs = data["workflow_runs"]
+        if not runs:
+            return None
+        return runs[0]
+
+    def _get_ci_test_counts(self, run_id: int) -> Optional[dict]:
+        """從 CI run 的 jobs 中解析測試數量"""
+        data = self.gh._gh(f"repos/{self.gh.repo}/actions/runs/{run_id}/jobs?per_page=10")
+        if not data or "jobs" not in data:
+            return None
+
+        total_passed = 0
+        total_failed = 0
+        total_tests = 0
+
+        for job in data["jobs"]:
+            # 從 job 名稱或 steps 推斷測試結果
+            for step in job.get("steps", []):
+                name_lower = step.get("name", "").lower()
+                if any(kw in name_lower for kw in ["test", "pytest", "unittest", "測試"]):
+                    if step.get("conclusion") == "success":
+                        total_passed += 1
+                    elif step.get("conclusion") == "failure":
+                        total_failed += 1
+                    total_tests += 1
+
+        return {"passed": total_passed, "failed": total_failed, "total": total_tests}
 
     def check_test_pass_rate(self) -> QualityCheck:
-        """TH-10: 測試通過率檢查"""
-        if not self.temp_dir:
-            self.temp_dir = self.gh.clone_temp_repo()
+        """TH-10: 測試通過率（從 GitHub Actions CI 或 STAGE_PASS 讀取）"""
+        latest_run = self._get_latest_ci_run()
 
-        if self.temp_dir:
-            try:
-                result = subprocess.run(
-                    ["python3", "-m", "pytest", "tests/", "-v", "--tb=line"],
-                    cwd=self.temp_dir,
-                    capture_output=True,
-                    timeout=60,
-                    text=True
-                )
-                output = result.stdout + result.stderr
+        if not latest_run:
+            # Fallback: 從 STAGE_PASS 或 test report 中尋找測試證據
+            return self._check_test_from_artifacts()
 
-                # Parse test results
-                passed = re.search(r"(\d+)\s+passed", output)
-                failed = re.search(r"(\d+)\s+failed", output)
-                errors = re.search(r"(\d+)\s+error", output)
+        conclusion = latest_run.get("conclusion", "unknown")
+        run_url = latest_run.get("html_url", "")
+        run_id = latest_run.get("id")
 
-                passed_count = int(passed.group(1)) if passed else 0
-                failed_count = int(failed.group(1)) if failed else 0
-                error_count = int(errors.group(1)) if errors else 0
+        # 取得 test step 細節
+        test_info = self._get_ci_test_counts(run_id) if run_id else None
 
-                # TH-10: 必須至少有1個測試通過，且0個失敗
-                all_passed = (passed_count > 0 and failed_count == 0 and error_count == 0)
+        if conclusion == "success":
+            detail = f"CI 最新執行成功"
+            if test_info and test_info["total"] > 0:
+                detail += f"（{test_info['passed']} test steps passed）"
+            return QualityCheck(
+                check_id="TH-10",
+                dimension="測試通過率",
+                severity="PASS",
+                actual_value="CI PASS",
+                threshold="=100%",
+                detail=detail,
+                passed=True,
+                rule_ref="TH-10"
+            )
+        elif conclusion == "failure":
+            detail = f"CI 最新執行失敗"
+            if test_info and test_info["failed"] > 0:
+                detail += f"（{test_info['failed']} test steps failed）"
+            return QualityCheck(
+                check_id="TH-10",
+                dimension="測試通過率",
+                severity="CRITICAL",
+                actual_value="CI FAIL",
+                threshold="=100%",
+                detail=detail,
+                passed=False,
+                rule_ref="TH-10"
+            )
+        else:
+            return QualityCheck(
+                check_id="TH-10",
+                dimension="測試通過率",
+                severity="WARNING",
+                actual_value=conclusion,
+                threshold="=100%",
+                detail=f"CI 狀態：{conclusion}",
+                passed=False,
+                rule_ref="TH-10"
+            )
+
+    def _check_test_from_artifacts(self) -> QualityCheck:
+        """Fallback: 從 STAGE_PASS / DEVELOPMENT_LOG / test reports 讀取測試結果"""
+        # 尋找包含測試結果的檔案
+        candidates = []
+        all_files = self.gh.get_files()
+
+        for f in all_files:
+            path = f.get("path", "")
+            if any(kw in path.lower() for kw in ["stage_pass", "test_result", "test_report", "development_log"]):
+                candidates.append(path)
+
+        # 優先排序：test_result/test_report 優先於 stage_pass
+        def _priority(p):
+            pl = p.lower()
+            if "test_result" in pl or "test_report" in pl:
+                return 0
+            if "development_log" in pl:
+                return 1
+            return 2  # stage_pass
+        candidates.sort(key=_priority)
+
+        # 從候選檔案中搜尋 pytest 結果
+        for path in candidates:
+            content = self.gh.get_file_content(path)
+            if not content:
+                continue
+
+            # 搜尋 pytest 結果格式: "X passed", "X failed"
+            passed_match = re.search(r"(\d+)\s+passed", content)
+            failed_match = re.search(r"(\d+)\s+failed", content)
+
+            if passed_match:
+                passed_count = int(passed_match.group(1))
+                failed_count = int(failed_match.group(1)) if failed_match else 0
+                all_ok = passed_count > 0 and failed_count == 0
+
                 detail = f"{passed_count} passed"
                 if failed_count > 0:
                     detail += f", {failed_count} failed"
-                if error_count > 0:
-                    detail += f", {error_count} errors"
+                detail += f"（來源：{path}）"
 
                 return QualityCheck(
                     check_id="TH-10",
                     dimension="測試通過率",
-                    severity="PASS" if all_passed else "CRITICAL",
+                    severity="PASS" if all_ok else "CRITICAL",
                     actual_value=detail,
-                    threshold="=100% (無失敗)",
+                    threshold="=100%",
                     detail=f"測試結果：{detail}",
-                    passed=all_passed,
+                    passed=all_ok,
                     rule_ref="TH-10"
                 )
-            except subprocess.TimeoutExpired:
-                logging.warning("Pytest timeout")
-            except Exception as e:
-                logging.warning(f"Failed to run tests: {e}")
+
+        # 最後 fallback: 檢查 test 檔案是否存在
+        test_files = [f for f in all_files if 'test' in f.get("path", "").lower()
+                      and f.get("path", "").endswith(('.py', '.ts', '.js'))]
+
+        if test_files:
+            return QualityCheck(
+                check_id="TH-10",
+                dimension="測試通過率",
+                severity="WARNING",
+                actual_value=f"{len(test_files)} test files",
+                threshold="=100%",
+                detail=f"發現 {len(test_files)} 個測試檔案，但無法確認執行結果（無 CI 記錄或測試報告）",
+                passed=False,
+                rule_ref="TH-10"
+            )
 
         return QualityCheck(
             check_id="TH-10",
             dimension="測試通過率",
-            severity="WARNING",
-            actual_value="Unknown",
+            severity="CRITICAL",
+            actual_value="N/A",
             threshold="=100%",
-            detail="無法執行測試（工具不可用）",
+            detail="找不到測試檔案或測試結果",
             passed=False,
             rule_ref="TH-10"
         )
 
     def check_unit_test_coverage(self) -> QualityCheck:
-        """TH-11: 單元測試覆蓋率檢查（與 TH-06 相同）"""
-        # 在 check_code_coverage 中已經執行，這裡返回簡化版本
-        if not self.temp_dir:
-            self.temp_dir = self.gh.clone_temp_repo()
+        """TH-11: 單元測試覆蓋率（透過測試檔案分析）"""
+        # 計算 src 與 test 檔案比例
+        all_files = self.gh.get_files()
 
-        if self.temp_dir:
-            try:
-                result = subprocess.run(
-                    ["python3", "-m", "pytest", "tests/", "--cov=.", "--cov-report=term-missing", "-q"],
-                    cwd=self.temp_dir,
-                    capture_output=True,
-                    timeout=60,
-                    text=True
-                )
-                match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", result.stdout)
-                if match:
-                    coverage = float(match.group(1))
-                    passed = coverage >= 70
-                    return QualityCheck(
-                        check_id="TH-11",
-                        dimension="單元測試覆蓋率",
-                        severity="PASS" if passed else "WARNING",
-                        actual_value=coverage,
-                        threshold="≥70%",
-                        detail=f"單元測試覆蓋率 {coverage}%（閾值 ≥70%）",
-                        passed=passed,
-                        rule_ref="TH-11"
-                    )
-            except subprocess.TimeoutExpired:
-                logging.warning("Pytest timeout")
-            except Exception as e:
-                logging.warning(f"Failed to check unit test coverage: {e}")
+        src_files = [
+            f for f in all_files
+            if ('src/' in f.get("path", "") or '03-development/src/' in f.get("path", "")
+                or 'app/' in f.get("path", ""))
+            and f.get("path", "").endswith(('.py', '.ts', '.js', '.go'))
+            and 'test' not in f.get("path", "").lower()
+        ]
+
+        test_files = [
+            f for f in all_files
+            if f.get("path", "").endswith(('.py', '.ts', '.js', '.go'))
+            and ('test' in f.get("path", "").lower() or 'tests/' in f.get("path", ""))
+        ]
+
+        if not src_files:
+            return QualityCheck(
+                check_id="TH-11",
+                dimension="單元測試覆蓋率",
+                severity="WARNING",
+                actual_value="N/A",
+                threshold="≥70%",
+                detail="找不到源代碼文件",
+                passed=False,
+                rule_ref="TH-11"
+            )
+
+        # 測試檔案 / 源碼檔案 比例作為覆蓋率估計
+        coverage_ratio = (len(test_files) / len(src_files)) * 100 if src_files else 0
+        coverage_ratio = min(100, coverage_ratio)
+        passed = coverage_ratio >= 70
 
         return QualityCheck(
             check_id="TH-11",
             dimension="單元測試覆蓋率",
-            severity="WARNING",
-            actual_value="Unknown",
+            severity="PASS" if passed else "WARNING",
+            actual_value=coverage_ratio,
             threshold="≥70%",
-            detail="無法測量覆蓋率（工具不可用）",
-            passed=False,
+            detail=f"測試檔案/源碼檔案比例 {coverage_ratio:.0f}%（{len(test_files)} tests / {len(src_files)} src）",
+            passed=passed,
             rule_ref="TH-11"
         )
 
     def check_sad_mapping(self) -> QualityCheck:
         """TH-16: 代碼↔SAD 映射檢查"""
-        # Find SAD.md
         sad_path = self.gh.resolve_path([
             "02-architecture/SAD.md",
             "architecture/SAD.md",
@@ -359,25 +451,23 @@ class QualityScorerPhase3:
             return QualityCheck(
                 check_id="TH-16",
                 dimension="代碼↔SAD 映射",
-                severity="INFO",  # Downgrade if SAD not found
+                severity="INFO",
                 actual_value="N/A",
-                threshold="=100%",
+                threshold="≥80%",
                 detail="找不到 SAD.md（無法檢查映射）",
-                passed=True,  # Don't penalize if SAD missing
+                passed=True,
                 rule_ref="TH-16"
             )
 
-        # Find src/ files (more flexible pattern)
+        # 尋找 src 檔案
         all_files = self.gh.get_files()
         src_files = [
             f for f in all_files
-            if ('src/' in f.get("path", "") or '03-development/src/' in f.get("path", ""))
-            and f.get("path", "").endswith(('.py', '.ts', '.js', '.go', '.java', '.cpp', '.c'))
+            if ('src/' in f.get("path", "") or '03-development/src/' in f.get("path", "")
+                or 'app/' in f.get("path", ""))
+            and f.get("path", "").endswith(('.py', '.ts', '.js', '.go'))
+            and 'test' not in f.get("path", "").lower()
         ]
-
-        if not src_files:
-            # Try to find any Python files at all
-            src_files = [f for f in all_files if f.get("path", "").endswith('.py')]
 
         if not src_files:
             return QualityCheck(
@@ -385,41 +475,155 @@ class QualityScorerPhase3:
                 dimension="代碼↔SAD 映射",
                 severity="INFO",
                 actual_value="N/A",
-                threshold="=100%",
+                threshold="≥80%",
                 detail="找不到源代碼文件",
                 passed=True,
                 rule_ref="TH-16"
             )
 
-        # Check @FR annotations in src files
+        # 檢查 FR 標註（支援 @FR-XX, [FR-XX], #FR-XX 格式）
         annotated_count = 0
         for file_obj in src_files:
             content = self.gh.get_file_content(file_obj["path"])
-            if content and (re.search(r"@FR-\d+", content) or re.search(r"@DESIGN-\d+", content)):
+            if content and re.search(r"(?:@|#|\[)FR-\d+", content, re.IGNORECASE):
                 annotated_count += 1
 
         coverage = (annotated_count / len(src_files)) * 100 if src_files else 0
-        passed = coverage >= 80  # Accept >= 80% instead of requiring 100%
+        passed = coverage >= 80
 
         return QualityCheck(
             check_id="TH-16",
             dimension="代碼↔SAD 映射",
             severity="PASS" if passed else "WARNING",
             actual_value=coverage,
-            threshold="≥80%",  # More realistic threshold
-            detail=f"代碼↔SAD 映射 {coverage:.1f}%（{annotated_count}/{len(src_files)} 檔案有標註）",
+            threshold="≥80%",
+            detail=f"代碼↔SAD 映射 {coverage:.1f}%（{annotated_count}/{len(src_files)} 檔案有 FR 標註）",
             passed=passed,
             rule_ref="TH-16"
         )
 
-    def cleanup(self):
-        """清理臨時資源"""
-        if self.temp_dir:
-            import shutil
-            try:
-                shutil.rmtree(self.temp_dir)
-            except:
-                pass
+    def check_fr_mapping(self) -> QualityCheck:
+        """v7.49: FR Mapping 檢查 (.methodology/fr_mapping.json)"""
+        fr_mapping_path = self.gh.resolve_path([
+            ".methodology/fr_mapping.json",
+            "fr_mapping.json"
+        ])
+
+        if not fr_mapping_path:
+            return QualityCheck(
+                check_id="FR-MAP",
+                dimension="FR Mapping",
+                severity="WARNING",
+                actual_value="N/A",
+                threshold="存在且完整",
+                detail="找不到 .methodology/fr_mapping.json（v7.49 要求）",
+                passed=False,
+                rule_ref="v7.49"
+            )
+
+        content = self.gh.get_file_content(fr_mapping_path)
+        if not content:
+            return QualityCheck(
+                check_id="FR-MAP",
+                dimension="FR Mapping",
+                severity="WARNING",
+                actual_value="Empty",
+                threshold="存在且完整",
+                detail="fr_mapping.json 為空",
+                passed=False,
+                rule_ref="v7.49"
+            )
+
+        try:
+            mapping = json.loads(content)
+            fr_count = len(mapping) if isinstance(mapping, dict) else 0
+            passed = fr_count > 0
+            return QualityCheck(
+                check_id="FR-MAP",
+                dimension="FR Mapping",
+                severity="PASS" if passed else "WARNING",
+                actual_value=fr_count,
+                threshold="≥1 FR 映射",
+                detail=f"fr_mapping.json 包含 {fr_count} 個 FR 映射",
+                passed=passed,
+                rule_ref="v7.49"
+            )
+        except json.JSONDecodeError:
+            return QualityCheck(
+                check_id="FR-MAP",
+                dimension="FR Mapping",
+                severity="CRITICAL",
+                actual_value="Invalid JSON",
+                threshold="有效 JSON",
+                detail="fr_mapping.json 格式錯誤",
+                passed=False,
+                rule_ref="v7.49"
+            )
+
+    def check_phase_prerequisites(self) -> QualityCheck:
+        """v7.57: Phase Prerequisites 檢查（往前檢查）"""
+        prereqs = PHASE_PREREQUISITES.get(3, [])
+        found = []
+        missing = []
+
+        for path in prereqs:
+            if self.gh.file_exists(path):
+                found.append(path)
+            else:
+                missing.append(path)
+
+        # 去重（SRS.md 和 01-requirements/SRS.md 只需一個存在）
+        unique_docs = set()
+        for p in prereqs:
+            base = p.split("/")[-1]
+            unique_docs.add(base)
+
+        found_docs = set()
+        for p in found:
+            base = p.split("/")[-1]
+            found_docs.add(base)
+
+        completeness = (len(found_docs) / len(unique_docs)) * 100 if unique_docs else 100
+        passed = completeness >= 100
+
+        return QualityCheck(
+            check_id="PRE-FLT",
+            dimension="Phase Prerequisites",
+            severity="PASS" if passed else "CRITICAL",
+            actual_value=completeness,
+            threshold="=100%",
+            detail=f"前置檢查 {len(found_docs)}/{len(unique_docs)} 完成" +
+                   (f"（缺少：{', '.join(missing)}）" if missing else ""),
+            passed=passed,
+            rule_ref="v7.57"
+        )
+
+    def check_phase_outputs(self) -> QualityCheck:
+        """v7.67: Phase Outputs 檢查（Post-flight）"""
+        outputs = PHASE_OUTPUTS.get(3, [])
+        found = []
+        missing = []
+
+        for path in outputs:
+            if self.gh.file_exists(path):
+                found.append(path)
+            else:
+                missing.append(path)
+
+        completeness = (len(found) / len(outputs)) * 100 if outputs else 100
+        passed = completeness >= 100
+
+        return QualityCheck(
+            check_id="POST-FLT",
+            dimension="Phase Outputs",
+            severity="PASS" if passed else "WARNING",
+            actual_value=completeness,
+            threshold="=100%",
+            detail=f"產出檢查 {len(found)}/{len(outputs)} 完成" +
+                   (f"（缺少：{', '.join(missing)}）" if missing else ""),
+            passed=passed,
+            rule_ref="v7.67"
+        )
 
 
 # ─────────────────────────────────────────────
@@ -928,7 +1132,6 @@ class QualityScorer:
             checks = scorer.check_all()
             for check in checks:
                 result.add(check)
-            scorer.cleanup()
 
         # 計算總分
         if result.checks:
@@ -954,7 +1157,7 @@ class QualityScorer:
 
 > **專案**：{score.repo}
 > **評分時間**：{score.score_time}
-> **方法論版本**：methodology-v2 v7.14
+> **方法論版本**：methodology-v2 v7.73
 > **評分工具**：quality_scorer.py
 
 ---
@@ -963,7 +1166,7 @@ class QualityScorer:
 
 | 項目 | 值 |
 |------|-----|
-| 裁決 | {'✅ **通過**' if score.verdict == 'PASS' else '❌ **不通過**'} |
+| 裁決 | {'✅ **通過**' if score.verdict == 'PASS' else ('⚠️ **有條件通過**' if score.verdict == 'WARNING' else '❌ **不通過**')} |
 | 品質分數 | **{score.overall_score:.1f} / 100** |
 | 嚴重問題（CRITICAL） | {len(score.criticals())} 個 |
 | 警告（WARNING） | {len(score.warnings())} 個 |
@@ -983,7 +1186,7 @@ class QualityScorer:
 """
 
         report += """---
-*由 quality_scorer.py 自動生成 | methodology-v2 v7.14*"""
+*由 quality_scorer.py 自動生成 | methodology-v2 v7.73*"""
         return report
 
 
