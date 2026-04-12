@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-phase_auditor.py — methodology-v2 v7.14 Phase Audit Engine
+phase_auditor.py — methodology-v2 v7.73 Phase Audit Engine
 ============================================================
 審計者視角：只能存取 GitHub 某個階段的所有產出物，
 對 AI Agent 宣稱通過的 Phase 進行獨立驗證，輸出最終審計報告。
@@ -14,7 +14,7 @@ phase_auditor.py — methodology-v2 v7.14 Phase Audit Engine
     --phase         審計階段編號 1-8                    [必填]
     --branch        目標分支 (預設: main)               [選填]
     --project-name  專案顯示名稱                        [選填，自動從 repo 推斷]
-    --methodology-version  v7.14 (預設)               [選填]
+    --methodology-version  v7.73 (預設)               [選填]
 """
 
 import argparse
@@ -34,7 +34,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 
 # ─────────────────────────────────────────────
-# 1. METHODOLOGY-V2 v7.14 規則庫（硬編碼，不依賴遠端框架）
+# 1. METHODOLOGY-V2 v7.73 規則庫（硬編碼，不依賴遠端框架）
 # ─────────────────────────────────────────────
 
 HARD_RULES = {
@@ -65,7 +65,7 @@ NEGATIVE_CONSTRAINTS = {
     "subagent_inheriting_context": ("Subagent 繼承父級上下文", -15),
 }
 
-# 每個 Phase 的規格（依 SKILL.md v7.14 Phase 路由表）
+# 每個 Phase 的規格（依 SKILL.md v7.73 Phase 路由表）
 PHASE_SPEC = {
     1: {
         "name": "需求規格",
@@ -1874,7 +1874,7 @@ class PhaseAuditor:
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="PASS",
-                title="✅ Citations 採用 v7.14 標準格式（Artifact.md#L行號）且包含 artifact_verification",
+                title="✅ Citations 採用 v7.73 標準格式（Artifact.md#L行號）且包含 artifact_verification",
                 detail=detail,
             ))
         elif has_loose_refs and has_artifact_verify:
@@ -1882,8 +1882,8 @@ class PhaseAuditor:
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="WARNING",
-                title="⚠️ Citations 含行號但未採用 v7.14 標準格式（應為 SRS.md#L23）",
-                detail="v7.14 建議格式：Citations: SRS.md#L23-L45, SAD.md#L67",
+                title="⚠️ Citations 含行號但未採用 v7.73 標準格式（應為 SRS.md#L23）",
+                detail="v7.73 建議格式：Citations: SRS.md#L23-L45, SAD.md#L67",
                 rule_ref="HR-15",
             ))
         elif not has_loose_refs and not has_artifact_verify:
@@ -1892,7 +1892,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="CRITICAL",
                 title="❌ Citations 缺少行號引用與 artifact_verification（違反 HR-15, Integrity -15）",
-                detail="v7.14 HR-15: citations 必須含行號 + artifact_verification",
+                detail="v7.73 HR-15: citations 必須含行號 + artifact_verification",
                 rule_ref="HR-15",
             ))
         else:
@@ -1907,7 +1907,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="WARNING",
                 title=f"⚠️ Citations 缺少：{', '.join(missing)}（HR-15 部分不符）",
-                detail="v7.14 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
+                detail="v7.73 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
                 rule_ref="HR-15",
             ))
 
@@ -1919,7 +1919,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="INFO",
                 title="⚠️ Phase 3+ 未偵測到 verify_citations.py / citation_enforcer.py 執行記錄",
-                detail="v7.14 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證",
+                detail="v7.73 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證",
                 rule_ref="HR-15",
             ))
 
@@ -2020,7 +2020,7 @@ class PhaseAuditor:
                 dimension="run-phase 入口驗證",
                 severity="PASS",
                 title="✅ 使用標準入口 python cli.py run-phase + Pre-flight 驗證",
-                detail="符合 v7.14 §run-phase 單一入口點原則",
+                detail="符合 v7.73 §run-phase 單一入口點原則",
             ))
         elif has_run_phase:
             self.result.add(Finding(
@@ -2028,7 +2028,7 @@ class PhaseAuditor:
                 dimension="run-phase 入口驗證",
                 severity="WARNING",
                 title="⚠️ 使用 run-phase 但未偵測到 Pre-flight 執行",
-                detail="v7.14 要求 Pre-flight checks 在 Phase 進入前執行",
+                detail="v7.73 要求 Pre-flight checks 在 Phase 進入前執行",
             ))
         else:
             self.result.add(Finding(
@@ -2036,7 +2036,7 @@ class PhaseAuditor:
                 dimension="run-phase 入口驗證",
                 severity="WARNING",
                 title="⚠️ 未使用 python cli.py run-phase 標準入口",
-                detail="v7.14 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查",
+                detail="v7.73 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查",
             ))
 
     # ── C15: artifact_verification 強制欄位（v7.5 增強）──────────────
@@ -2085,7 +2085,7 @@ class PhaseAuditor:
                 dimension="artifact_verification 強制欄位",
                 severity="PASS",
                 title="✅ 包含 artifact_verification 記錄",
-                detail="符合 v7.14 §HR-15 強制驗證欄位",
+                detail="符合 v7.73 §HR-15 強制驗證欄位",
             ))
         else:
             self.result.add(Finding(
@@ -2093,8 +2093,128 @@ class PhaseAuditor:
                 dimension="artifact_verification 強制欄位",
                 severity="CRITICAL",
                 title="❌ artifact_verification 強制欄位缺失",
-                detail="v7.14 HR-15: Phase 3+ 必須包含 artifact_verification 記錄（Integrity -15）",
+                detail="v7.73 HR-15: Phase 3+ 必須包含 artifact_verification 記錄（Integrity -15）",
                 rule_ref="HR-15",
+            ))
+
+    # ── C16: Phase Prerequisites 往前檢查（v7.57 新增）──────────────
+    def check_c16_phase_prerequisites(self):
+        """C16: v7.57 — 檢查前階段產出物是否齊全"""
+        PHASE_PREREQUISITES = {
+            1: [],
+            2: ["SRS.md", "01-requirements/SRS.md"],
+            3: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/fr_mapping.json"],
+            4: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/fr_mapping.json", ".methodology/SAB.json"],
+            5: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/SAB.json", "04-testing/TEST_PLAN.md"],
+            6: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/SAB.json", "04-testing/TEST_PLAN.md", "05-baseline/BASELINE.md"],
+            7: ["06-reports/QUALITY_REPORT.md"],
+            8: ["07-deployment/CONFIG_RECORDS.md", "07-deployment/requirements.lock"],
+        }
+
+        prereqs = PHASE_PREREQUISITES.get(self.phase, [])
+        if not prereqs:
+            self.result.add(Finding(
+                check_id="C16",
+                dimension="Phase Prerequisites",
+                severity="PASS",
+                title="✅ Phase 1 無前置要求",
+                detail="",
+            ))
+            return
+
+        found = []
+        missing = []
+        for path in prereqs:
+            if self.gh.file_exists(path):
+                found.append(path)
+            else:
+                missing.append(path)
+
+        # 去重：SRS.md 和 01-requirements/SRS.md 只需一個存在
+        unique_docs = {}
+        for p in prereqs:
+            base = p.split("/")[-1]
+            if base not in unique_docs:
+                unique_docs[base] = []
+            unique_docs[base].append(p)
+
+        missing_docs = []
+        for base, paths in unique_docs.items():
+            if not any(self.gh.file_exists(p) for p in paths):
+                missing_docs.append(base)
+
+        if not missing_docs:
+            self.result.add(Finding(
+                check_id="C16",
+                dimension="Phase Prerequisites",
+                severity="PASS",
+                title=f"✅ Phase {self.phase} 前置產出物齊全（{len(unique_docs)} 項）",
+                detail=f"已確認：{', '.join(unique_docs.keys())}",
+            ))
+        else:
+            self.result.add(Finding(
+                check_id="C16",
+                dimension="Phase Prerequisites",
+                severity="CRITICAL",
+                title=f"❌ Phase {self.phase} 前置產出物缺失",
+                detail=f"v7.57 往前檢查：缺少 {', '.join(missing_docs)}",
+                rule_ref="v7.57",
+            ))
+
+    # ── C17: Phase Outputs 產出驗證（v7.67 新增）──────────────
+    def check_c17_phase_outputs(self):
+        """C17: v7.67 — 檢查當前階段必要產出是否完成"""
+        PHASE_OUTPUTS = {
+            1: ["SRS.md", "01-requirements/SRS.md"],
+            2: ["SAD.md", "02-architecture/SAD.md"],
+            3: [".methodology/fr_mapping.json"],
+            4: ["04-testing/TEST_PLAN.md"],
+            5: ["05-baseline/BASELINE.md"],
+            6: ["06-reports/QUALITY_REPORT.md"],
+            7: ["07-deployment/CONFIG_RECORDS.md", "07-deployment/requirements.lock"],
+            8: [],
+        }
+
+        outputs = PHASE_OUTPUTS.get(self.phase, [])
+        if not outputs:
+            self.result.add(Finding(
+                check_id="C17",
+                dimension="Phase Outputs",
+                severity="PASS",
+                title=f"✅ Phase {self.phase} 無必要產出檢查",
+                detail="",
+            ))
+            return
+
+        # 去重：同一文件的多路徑只需一個存在
+        unique_outputs = {}
+        for p in outputs:
+            base = p.split("/")[-1]
+            if base not in unique_outputs:
+                unique_outputs[base] = []
+            unique_outputs[base].append(p)
+
+        missing_outputs = []
+        for base, paths in unique_outputs.items():
+            if not any(self.gh.file_exists(p) for p in paths):
+                missing_outputs.append(base)
+
+        if not missing_outputs:
+            self.result.add(Finding(
+                check_id="C17",
+                dimension="Phase Outputs",
+                severity="PASS",
+                title=f"✅ Phase {self.phase} 必要產出齊全（{len(unique_outputs)} 項）",
+                detail=f"已確認：{', '.join(unique_outputs.keys())}",
+            ))
+        else:
+            self.result.add(Finding(
+                check_id="C17",
+                dimension="Phase Outputs",
+                severity="WARNING",
+                title=f"⚠️ Phase {self.phase} 必要產出未完成",
+                detail=f"v7.67 Post-flight：缺少 {', '.join(missing_outputs)}",
+                rule_ref="v7.67",
             ))
 
     # ── 執行所有檢查 ──────────────────────────────────
@@ -2120,6 +2240,8 @@ class PhaseAuditor:
             ("C13 FORBIDDEN 模式",     self.check_c13_forbidden_patterns),
             ("C14 run-phase 入口驗證",  self.check_c14_run_phase_entry),
             ("C15 artifact_verification", self.check_c15_artifact_verification),
+            ("C16 Phase Prerequisites",   self.check_c16_phase_prerequisites),
+            ("C17 Phase Outputs",          self.check_c17_phase_outputs),
         ]
         for name, fn in checks:
             print(f"  → {name}...", end=" ", flush=True)
@@ -2184,7 +2306,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         f"",
         f"> **專案**：{result.repo}  ",
         f"> **審計時間**：{result.audit_time}  ",
-        f"> **方法論版本**：methodology-v2 v7.14  ",
+        f"> **方法論版本**：methodology-v2 v7.73  ",
         f"> **審計工具**：phase_auditor.py  ",
         f"",
         f"---",
@@ -2276,7 +2398,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
     lines += [
         f"",
         f"---",
-        f"*由 phase_auditor.py 自動生成 | methodology-v2 v7.14*",
+        f"*由 phase_auditor.py 自動生成 | methodology-v2 v7.73*",
     ]
 
     return "\n".join(lines)
@@ -2305,7 +2427,7 @@ def main():
 
   無需提供（工具自動偵測）：
     - methodology 版本（從 STAGE_PASS 或 DEVELOPMENT_LOG 自動偵測）
-    - Phase 規格（內建 SKILL.md v7.14 規則庫）
+    - Phase 規格（內建 SKILL.md v7.73 規則庫）
     - 文件路徑（支援多種命名慣例自動解析）
 
 使用範例：
