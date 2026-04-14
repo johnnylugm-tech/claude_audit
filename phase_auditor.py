@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-phase_auditor.py — methodology-v2 v7.73 Phase Audit Engine
+phase_auditor.py — methodology-v2 v8.0 Phase Audit Engine
 ============================================================
 審計者視角：只能存取 GitHub 某個階段的所有產出物，
 對 AI Agent 宣稱通過的 Phase 進行獨立驗證，輸出最終審計報告。
@@ -14,7 +14,7 @@ phase_auditor.py — methodology-v2 v7.73 Phase Audit Engine
     --phase         審計階段編號 1-8                    [必填]
     --branch        目標分支 (預設: main)               [選填]
     --project-name  專案顯示名稱                        [選填，自動從 repo 推斷]
-    --methodology-version  v7.73 (預設)               [選填]
+    --methodology-version  v8.0 (預設)                [選填]
 """
 
 import argparse
@@ -34,7 +34,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 
 # ─────────────────────────────────────────────
-# 1. METHODOLOGY-V2 v7.73 規則庫（硬編碼，不依賴遠端框架）
+# 1. METHODOLOGY-V2 v8.0 規則庫（硬編碼，不依賴遠端框架）
 # ─────────────────────────────────────────────
 
 HARD_RULES = {
@@ -51,7 +51,7 @@ HARD_RULES = {
     "HR-13": "Phase 執行時長超過預估時間的 3 倍 → 強制 checkpoint，PAUSE 等待裁決",
     "HR-14": "Integrity 分數降至 < 40 → FREEZE 專案，全面審計後才能繼續",
     # v7.5 新增
-    "HR-15": "citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
+    "HR-15": "citations 格式：檔案#L行號 或 檔案#L起始-L結束 + artifact_verification，缺少則 Integrity -15",
 }
 
 # v6.21 新增: 負面約束違規扣分（Integrity Tracker 補充項）
@@ -65,7 +65,7 @@ NEGATIVE_CONSTRAINTS = {
     "subagent_inheriting_context": ("Subagent 繼承父級上下文", -15),
 }
 
-# 每個 Phase 的規格（依 SKILL.md v7.73 Phase 路由表）
+# 每個 Phase 的規格（依 SKILL.md v8.0 Phase 路由表）
 PHASE_SPEC = {
     1: {
         "name": "需求規格",
@@ -93,6 +93,7 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-01": ("ASPICE 合規率", ">80%"),
             "TH-03": ("Constitution 正確性", "=100%"),
+            "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
             "TH-14": ("規格完整性", "≥90%"),
         },
         # SRS 最低 FR 數
@@ -126,6 +127,7 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-01": ("ASPICE 合規率", ">80%"),
             "TH-03": ("Constitution 正確性", "=100%"),
+            "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
             "TH-05": ("Constitution 可維護性", ">70%"),
         },
         "min_duration_minutes": 10,
@@ -148,6 +150,7 @@ PHASE_SPEC = {
              "Phase3_STAGE_PASS.md（或中文版）", True),
         ],
         "thresholds": {
+            "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
             "TH-10": ("測試通過率", "=100%"),
             "TH-11": ("單元測試覆蓋率", "≥70%"),
             "TH-16": ("代碼 ↔ SAD 映射率", "=100%"),  # v6.15 新增
@@ -172,6 +175,8 @@ PHASE_SPEC = {
              "Phase4_STAGE_PASS.md", True),
         ],
         "thresholds": {
+            "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
+            "TH-05": ("Constitution 可維護性", ">70%"),  # v8.0 新增
             "TH-10": ("測試通過率", "=100%"),
             "TH-12": ("單元測試覆蓋率", "≥80%"),
             "TH-17": ("FR ↔ 測試映射率", "≥90%"),  # v6.15 新增
@@ -184,7 +189,7 @@ PHASE_SPEC = {
         "agent_a": "devops",
         "agent_b": "architect",
         "ab_rounds": 2,
-        "constitution_type": None,
+        "constitution_type": "verification",  # v8.0: was None
         "deliverables": [
             (["05-verify/BASELINE.md", "BASELINE.md"],
              "BASELINE.md（7章節）", True),
@@ -208,7 +213,7 @@ PHASE_SPEC = {
         "agent_a": "qa",
         "agent_b": "architect",
         "ab_rounds": 1,
-        "constitution_type": None,
+        "constitution_type": "srs",  # v8.0: re-checks SRS/SAD/Impl
         "deliverables": [
             (["06-quality/QUALITY_REPORT.md", "QUALITY_REPORT.md"],
              "QUALITY_REPORT.md（7章節）", True),
@@ -228,7 +233,7 @@ PHASE_SPEC = {
         "agent_a": "qa",
         "agent_b": "architect",
         "ab_rounds": 1,
-        "constitution_type": None,
+        "constitution_type": "risk_management",  # v8.0: was None
         "deliverables": [
             (["07-risk/RISK_ASSESSMENT.md", "RISK_ASSESSMENT.md"],
              "RISK_ASSESSMENT.md", True),
@@ -249,7 +254,7 @@ PHASE_SPEC = {
         "agent_a": "devops",
         "agent_b": "architect",
         "ab_rounds": 1,
-        "constitution_type": None,
+        "constitution_type": "configuration",  # v8.0: was None
         "deliverables": [
             (["08-config/CONFIG_RECORDS.md", "CONFIG_RECORDS.md"],
              "CONFIG_RECORDS.md（8章節）", True),
@@ -1831,16 +1836,17 @@ class PhaseAuditor:
             return
 
         # ── v7.5 精確 citation 格式（對齊 verify_citations.py）──
-        # 標準格式: SRS.md#L23, SAD.md#L45-L67, SPEC.md#L10-20
+        # v8.0 標準格式: 檔案#L行號 或 檔案#L起始-L結束
+        # e.g., SRS.md#L23, SAD.md#L45-L67, TEST_PLAN.md#L10-L20
         structured_citation = re.compile(
-            r"(?:SRS|SAD|SPEC|ARCH)\.md#L\d+(?:-L?\d+)?",
+            r"[A-Z_]+\.md#L\d+(?:-L?\d+)?",
             re.IGNORECASE,
         )
         structured_hits = structured_citation.findall(combined)
 
         # Citations: 行（verify_citations.py 的 CITATION_PATTERN）
         citations_line = re.compile(
-            r"Citations:\s*(?:(?:SRS|SAD|SPEC|ARCH)\.md#L\d+(?:-\d+)?(?:\s*,\s*)?)+",
+            r"Citations:\s*(?:[A-Z_]+\.md#L\d+(?:-L?\d+)?(?:\s*,\s*)?)+",
             re.IGNORECASE,
         )
         has_citations_line = bool(citations_line.search(combined))
@@ -1874,7 +1880,7 @@ class PhaseAuditor:
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="PASS",
-                title="✅ Citations 採用 v7.73 標準格式（Artifact.md#L行號）且包含 artifact_verification",
+                title="✅ Citations 採用 v8.0 標準格式（Artifact.md#L行號）且包含 artifact_verification",
                 detail=detail,
             ))
         elif has_loose_refs and has_artifact_verify:
@@ -1882,8 +1888,8 @@ class PhaseAuditor:
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="WARNING",
-                title="⚠️ Citations 含行號但未採用 v7.73 標準格式（應為 SRS.md#L23）",
-                detail="v7.73 建議格式：Citations: SRS.md#L23-L45, SAD.md#L67",
+                title="⚠️ Citations 含行號但未採用 v8.0 標準格式（應為 SRS.md#L23）",
+                detail="v8.0 建議格式：Citations: SRS.md#L23-L45, SAD.md#L67",
                 rule_ref="HR-15",
             ))
         elif not has_loose_refs and not has_artifact_verify:
@@ -1892,7 +1898,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="CRITICAL",
                 title="❌ Citations 缺少行號引用與 artifact_verification（違反 HR-15, Integrity -15）",
-                detail="v7.73 HR-15: citations 必須含行號 + artifact_verification",
+                detail="v8.0 HR-15: citations 必須含行號 + artifact_verification",
                 rule_ref="HR-15",
             ))
         else:
@@ -1907,7 +1913,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="WARNING",
                 title=f"⚠️ Citations 缺少：{', '.join(missing)}（HR-15 部分不符）",
-                detail="v7.73 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
+                detail="v8.0 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
                 rule_ref="HR-15",
             ))
 
@@ -1919,7 +1925,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="INFO",
                 title="⚠️ Phase 3+ 未偵測到 verify_citations.py / citation_enforcer.py 執行記錄",
-                detail="v7.73 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證",
+                detail="v8.0 HR-15 Layer 3: Phase 3+ 應執行 quality_gate/verify_citations.py 自動驗證",
                 rule_ref="HR-15",
             ))
 
@@ -2020,7 +2026,7 @@ class PhaseAuditor:
                 dimension="run-phase 入口驗證",
                 severity="PASS",
                 title="✅ 使用標準入口 python cli.py run-phase + Pre-flight 驗證",
-                detail="符合 v7.73 §run-phase 單一入口點原則",
+                detail="符合 v8.0 §run-phase 單一入口點原則",
             ))
         elif has_run_phase:
             self.result.add(Finding(
@@ -2028,7 +2034,7 @@ class PhaseAuditor:
                 dimension="run-phase 入口驗證",
                 severity="WARNING",
                 title="⚠️ 使用 run-phase 但未偵測到 Pre-flight 執行",
-                detail="v7.73 要求 Pre-flight checks 在 Phase 進入前執行",
+                detail="v8.0 要求 Pre-flight checks 在 Phase 進入前執行",
             ))
         else:
             self.result.add(Finding(
@@ -2036,7 +2042,7 @@ class PhaseAuditor:
                 dimension="run-phase 入口驗證",
                 severity="WARNING",
                 title="⚠️ 未使用 python cli.py run-phase 標準入口",
-                detail="v7.73 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查",
+                detail="v8.0 建議所有 Phase 執行都應使用標準入口點以便 FSM 狀態檢查",
             ))
 
     # ── C15: artifact_verification 強制欄位（v7.5 增強）──────────────
@@ -2085,7 +2091,7 @@ class PhaseAuditor:
                 dimension="artifact_verification 強制欄位",
                 severity="PASS",
                 title="✅ 包含 artifact_verification 記錄",
-                detail="符合 v7.73 §HR-15 強制驗證欄位",
+                detail="符合 v8.0 §HR-15 強制驗證欄位",
             ))
         else:
             self.result.add(Finding(
@@ -2093,7 +2099,7 @@ class PhaseAuditor:
                 dimension="artifact_verification 強制欄位",
                 severity="CRITICAL",
                 title="❌ artifact_verification 強制欄位缺失",
-                detail="v7.73 HR-15: Phase 3+ 必須包含 artifact_verification 記錄（Integrity -15）",
+                detail="v8.0 HR-15: Phase 3+ 必須包含 artifact_verification 記錄（Integrity -15）",
                 rule_ref="HR-15",
             ))
 
@@ -2106,9 +2112,9 @@ class PhaseAuditor:
             3: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/fr_mapping.json"],
             4: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/fr_mapping.json", ".methodology/SAB.json"],
             5: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/SAB.json", "04-testing/TEST_PLAN.md"],
-            6: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/SAB.json", "04-testing/TEST_PLAN.md", "05-baseline/BASELINE.md"],
-            7: ["06-reports/QUALITY_REPORT.md"],
-            8: ["07-deployment/CONFIG_RECORDS.md", "07-deployment/requirements.lock"],
+            6: ["SRS.md", "01-requirements/SRS.md", "02-architecture/SAD.md", ".methodology/SAB.json", "04-testing/TEST_PLAN.md", "05-verify/BASELINE.md"],
+            7: ["06-quality/QUALITY_REPORT.md"],
+            8: ["08-config/CONFIG_RECORDS.md", "08-config/requirements.lock"],
         }
 
         prereqs = PHASE_PREREQUISITES.get(self.phase, [])
@@ -2169,9 +2175,9 @@ class PhaseAuditor:
             2: ["SAD.md", "02-architecture/SAD.md"],
             3: [".methodology/fr_mapping.json"],
             4: ["04-testing/TEST_PLAN.md"],
-            5: ["05-baseline/BASELINE.md"],
-            6: ["06-reports/QUALITY_REPORT.md"],
-            7: ["07-deployment/CONFIG_RECORDS.md", "07-deployment/requirements.lock"],
+            5: ["05-verify/BASELINE.md"],
+            6: ["06-quality/QUALITY_REPORT.md"],
+            7: ["08-config/CONFIG_RECORDS.md", "08-config/requirements.lock"],
             8: [],
         }
 
@@ -2306,7 +2312,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         f"",
         f"> **專案**：{result.repo}  ",
         f"> **審計時間**：{result.audit_time}  ",
-        f"> **方法論版本**：methodology-v2 v7.73  ",
+        f"> **方法論版本**：methodology-v2 v8.0  ",
         f"> **審計工具**：phase_auditor.py  ",
         f"",
         f"---",
@@ -2398,7 +2404,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
     lines += [
         f"",
         f"---",
-        f"*由 phase_auditor.py 自動生成 | methodology-v2 v7.73*",
+        f"*由 phase_auditor.py 自動生成 | methodology-v2 v8.0*",
     ]
 
     return "\n".join(lines)
@@ -2427,7 +2433,7 @@ def main():
 
   無需提供（工具自動偵測）：
     - methodology 版本（從 STAGE_PASS 或 DEVELOPMENT_LOG 自動偵測）
-    - Phase 規格（內建 SKILL.md v7.73 規則庫）
+    - Phase 規格（內建 SKILL.md v8.0 規則庫）
     - 文件路徑（支援多種命名慣例自動解析）
 
 使用範例：
