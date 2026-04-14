@@ -90,7 +90,6 @@ jobs:
           echo "REPORT=$REPORT" >> $GITHUB_OUTPUT
 
       - name: Commit and push report
-      - name: Commit and push report
         run: |
           set -eo pipefail
           git config user.name "claude-audit-bot"
