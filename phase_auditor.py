@@ -1853,7 +1853,7 @@ class PhaseAuditor:
 
         # 寬鬆行號引用（向後相容 v6.54 舊格式）
         loose_line_ref = re.compile(
-            r"[Ll]ine\s*\d+|L\d+|第\d+行|:\d+(?:\s|$)|行號\s*[:：]?\s*\d+",
+            r"[Ll]ine\s*\d+|L\d+|第\d+行|行號\s*[:：]?\s*\d+",
         )
         has_loose_refs = bool(loose_line_ref.search(combined))
 
