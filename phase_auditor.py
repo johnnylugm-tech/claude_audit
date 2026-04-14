@@ -1880,7 +1880,7 @@ class PhaseAuditor:
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="PASS",
-                title="✅ Citations 採用 v8.0 標準格式（Artifact.md#L行號）且包含 artifact_verification",
+                title="✅ Citations 採用 v8.0 標準格式（單行 Artifact.md#L23 或 範圍 L23-L45）且包含 artifact_verification",
                 detail=detail,
             ))
         elif has_loose_refs and has_artifact_verify:
@@ -1888,8 +1888,8 @@ class PhaseAuditor:
                 check_id="C12",
                 dimension="Citations 品質",
                 severity="WARNING",
-                title="⚠️ Citations 含行號但未採用 v8.0 標準格式（應為 SRS.md#L23）",
-                detail="v8.0 建議格式：Citations: SRS.md#L23-L45, SAD.md#L67",
+                title="⚠️ Citations 含行號但未採用 v8.0 標準格式（應為 檔案#L行號 或 檔案#L起始-L結束）",
+                detail="v8.0 建議格式（兩者皆可）：SRS.md#L23 （單行）或 SRS.md#L23-L45 （範圍）, SAD.md#L67 等",
                 rule_ref="HR-15",
             ))
         elif not has_loose_refs and not has_artifact_verify:
@@ -1898,7 +1898,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="CRITICAL",
                 title="❌ Citations 缺少行號引用與 artifact_verification（違反 HR-15, Integrity -15）",
-                detail="v8.0 HR-15: citations 必須含行號 + artifact_verification",
+                detail="v8.0 HR-15: citations 必須採用標準格式（檔案#L行號 或 L起始-L結束）+ artifact_verification",
                 rule_ref="HR-15",
             ))
         else:
@@ -1913,7 +1913,7 @@ class PhaseAuditor:
                 dimension="Citations 品質",
                 severity="WARNING",
                 title=f"⚠️ Citations 缺少：{', '.join(missing)}（HR-15 部分不符）",
-                detail="v8.0 HR-15: citations 必須含行號 + artifact_verification，缺少則 Integrity -15",
+                detail="v8.0 HR-15: citations 必須採用標準格式（檔案#L行號 或 L起始-L結束）+ artifact_verification，缺少則 Integrity -15",
                 rule_ref="HR-15",
             ))
 
