@@ -1810,7 +1810,36 @@ class PhaseAuditor:
     # ── C12: Citations 品質（HR-15, v7.5 新增）──────────
     def check_c12_citations_quality(self):
         """C12: v7.5 — citations 必須含行號 + artifact_verification，缺少則 Integrity -15
-        v7.5 新增：對齊 verify_citations.py 的精確格式 (SRS.md#L23-L45)"""
+        v7.5 新增：對齊 verify_citations.py 的精確格式 (SRS.md#L23-L45)
+        Phase Filter:
+          - P1-2: Skip (no code yet)
+          - P3-4: Full check (TH-16, TH-17 require code↔SAD mapping, FR↔test mapping)
+          - P5-8: Skip (different thresholds: TH-02 Constitution, TH-07 Logic; no structured citations required)
+        """
+        # Phase 5+ 使用不同的驗收標準（TH-02, TH-07），不要求結構化行號引用
+        if self.phase >= 5:
+            self.result.add(Finding(
+                check_id="C12",
+                dimension="Citations 品質",
+                severity="INFO",
+                title="ℹ️ Phase 5+ 不要求結構化行號引用（使用 TH-02, TH-07 驗收）",
+                detail="Phase 5+ 採用 Constitution 評分（TH-02 ≥80%, TH-07 ≥90）替代代碼↔SAD 映射檢查",
+                rule_ref="HR-15 Phase-specific variant",
+            ))
+            return
+
+        # Phase 1-2 無程式碼交付物，citation 檢查不適用
+        if self.phase < 3:
+            self.result.add(Finding(
+                check_id="C12",
+                dimension="Citations 品質",
+                severity="INFO",
+                title="ℹ️ Phase 1-2 無程式碼交付物，citation 檢查不適用",
+                detail="Phase 3+ 才進行代碼↔SAD 映射品質檢查（TH-16）",
+                rule_ref="HR-15 Phase-specific variant",
+            ))
+            return
+
         # 收集所有可能含 citations 的文件
         dev_content = self._content(["DEVELOPMENT_LOG.md"]) or ""
 
