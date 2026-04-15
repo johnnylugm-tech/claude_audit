@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-phase_auditor.py — methodology-v2 v8.0 Phase Audit Engine
+phase_auditor.py — methodology-v2 v8.1 Phase Audit Engine
 ============================================================
 審計者視角：只能存取 GitHub 某個階段的所有產出物，
 對 AI Agent 宣稱通過的 Phase 進行獨立驗證，輸出最終審計報告。
@@ -34,7 +34,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 
 # ─────────────────────────────────────────────
-# 1. METHODOLOGY-V2 v8.0 規則庫（硬編碼，不依賴遠端框架）
+# 1. METHODOLOGY-V2 v8.1 規則庫（硬編碼，不依賴遠端框架）
 # ─────────────────────────────────────────────
 
 HARD_RULES = {
@@ -94,7 +94,8 @@ PHASE_SPEC = {
             "TH-01": ("ASPICE 合規率", ">80%"),
             "TH-03": ("Constitution 正確性", "=100%"),
             "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
-            "TH-14": ("規格完整性", "≥90%"),
+            "TH-14": ("規格完整性", "=100%"),  # v8.1: raised from ≥90%
+            "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
         },
         # SRS 最低 FR 數
         "min_fr_count": 3,
@@ -128,7 +129,7 @@ PHASE_SPEC = {
             "TH-01": ("ASPICE 合規率", ">80%"),
             "TH-03": ("Constitution 正確性", "=100%"),
             "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
-            "TH-05": ("Constitution 可維護性", ">70%"),
+            "TH-05": ("Constitution 可維護性", ">90%"),  # v8.1: raised from >70%
         },
         "min_duration_minutes": 10,
     },
@@ -153,6 +154,7 @@ PHASE_SPEC = {
             "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
             "TH-10": ("測試通過率", "=100%"),
             "TH-11": ("單元測試覆蓋率", "≥70%"),
+            "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
             "TH-16": ("代碼 ↔ SAD 映射率", "=100%"),  # v6.15 新增
         },
         "min_duration_minutes": 30,
@@ -176,9 +178,10 @@ PHASE_SPEC = {
         ],
         "thresholds": {
             "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
-            "TH-05": ("Constitution 可維護性", ">70%"),  # v8.0 新增
+            "TH-05": ("Constitution 可維護性", ">90%"),  # v8.1: raised from >70%
             "TH-10": ("測試通過率", "=100%"),
             "TH-12": ("單元測試覆蓋率", "≥80%"),
+            "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
             "TH-17": ("FR ↔ 測試映射率", "≥90%"),  # v6.15 新增
         },
         "min_duration_minutes": 10,
@@ -205,6 +208,7 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-02": ("Constitution 總分", "≥80%"),
             "TH-07": ("邏輯正確性分數", "≥90分"),
+            "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
         },
         "min_duration_minutes": 15,
     },
@@ -225,6 +229,7 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-02": ("Constitution 總分", "≥80%"),
             "TH-07": ("邏輯正確性分數", "≥90分"),
+            "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
         },
         "min_duration_minutes": 10,
     },
@@ -246,6 +251,7 @@ PHASE_SPEC = {
         ],
         "thresholds": {
             "TH-07": ("邏輯正確性分數", "≥90分"),
+            "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
         },
         "min_duration_minutes": 10,
     },
@@ -263,7 +269,9 @@ PHASE_SPEC = {
             (["00-summary/Phase8_STAGE_PASS.md", "Phase8_STAGE_PASS.md"],
              "Phase8_STAGE_PASS.md", True),
         ],
-        "thresholds": {},
+        "thresholds": {
+            "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
+        },
         "min_duration_minutes": 10,
     },
 }
