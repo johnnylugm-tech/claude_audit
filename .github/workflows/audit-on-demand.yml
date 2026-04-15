@@ -1,4 +1,4 @@
-name: Run Phase Audit (v8.0)
+name: Run Phase Audit (v8.1)
 
 on:
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run audit (phase_auditor.py v8.0)
+      - name: Run audit (phase_auditor.py v8.1)
         id: audit
         run: |
           # Build report path
