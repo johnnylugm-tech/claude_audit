@@ -2349,7 +2349,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         f"",
         f"> **專案**：{result.repo}  ",
         f"> **審計時間**：{result.audit_time}  ",
-        f"> **方法論版本**：methodology-v2 v8.0  ",
+        f"> **方法論版本**：methodology-v2 v8.1  ",
         f"> **審計工具**：phase_auditor.py  ",
         f"",
         f"---",
@@ -2441,7 +2441,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
     lines += [
         f"",
         f"---",
-        f"*由 phase_auditor.py 自動生成 | methodology-v2 v8.0*",
+        f"*由 phase_auditor.py 自動生成 | methodology-v2 v8.1*",
     ]
 
     return "\n".join(lines)
