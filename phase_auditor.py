@@ -152,6 +152,7 @@ PHASE_SPEC = {
         ],
         "thresholds": {
             "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
+            "TH-06": ("Constitution 測試覆蓋率", ">90%"),  # v8.1: raised from >80%
             "TH-10": ("測試通過率", "=100%"),
             "TH-11": ("單元測試覆蓋率", "≥70%"),
             "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
@@ -179,6 +180,7 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
             "TH-05": ("Constitution 可維護性", ">90%"),  # v8.1: raised from >70%
+            "TH-06": ("Constitution 測試覆蓋率", ">90%"),  # v8.1: raised from >80%
             "TH-10": ("測試通過率", "=100%"),
             "TH-12": ("單元測試覆蓋率", "≥80%"),
             "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
