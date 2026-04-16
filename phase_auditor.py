@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-phase_auditor.py — methodology-v2 v8.1 Phase Audit Engine
+phase_auditor.py — methodology-v2 v8.6 Phase Audit Engine
 ============================================================
 審計者視角：只能存取 GitHub 某個階段的所有產出物，
 對 AI Agent 宣稱通過的 Phase 進行獨立驗證，輸出最終審計報告。
@@ -14,7 +14,7 @@ phase_auditor.py — methodology-v2 v8.1 Phase Audit Engine
     --phase         審計階段編號 1-8                    [必填]
     --branch        目標分支 (預設: main)               [選填]
     --project-name  專案顯示名稱                        [選填，自動從 repo 推斷]
-    --methodology-version  v8.0 (預設)                [選填]
+    --methodology-version  v8.6 (預設)                [選填]
 """
 
 import argparse
@@ -65,7 +65,7 @@ NEGATIVE_CONSTRAINTS = {
     "subagent_inheriting_context": ("Subagent 繼承父級上下文", -15),
 }
 
-# 每個 Phase 的規格（依 SKILL.md v8.0 Phase 路由表）
+# 每個 Phase 的規格（依 SKILL.md v8.6 Phase 路由表）
 PHASE_SPEC = {
     1: {
         "name": "需求規格",
@@ -93,7 +93,7 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-01": ("ASPICE 合規率", ">80%"),
             "TH-03": ("Constitution 正確性", "=100%"),
-            "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
+            "TH-04": ("Constitution 安全性", "=100%"),  # v8.6: align SKILL.md (was Security 合規 ≥80%)
             "TH-14": ("規格完整性", "=100%"),  # v8.1: raised from ≥90%
             "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
         },
@@ -128,8 +128,9 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-01": ("ASPICE 合規率", ">80%"),
             "TH-03": ("Constitution 正確性", "=100%"),
-            "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
+            "TH-04": ("Constitution 安全性", "=100%"),  # v8.6: align SKILL.md (was Security 合規 ≥80%)
             "TH-05": ("Constitution 可維護性", ">90%"),  # v8.1: raised from >70%
+            "TH-15": ("Phase Truth", ">90%"),   # v8.6: SKILL.md Phase 1-8
         },
         "min_duration_minutes": 10,
     },
@@ -151,7 +152,7 @@ PHASE_SPEC = {
              "Phase3_STAGE_PASS.md（或中文版）", True),
         ],
         "thresholds": {
-            "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
+            "TH-04": ("Constitution 安全性", "=100%"),  # v8.6: align SKILL.md (was Security 合規 ≥80%)
             "TH-06": ("Constitution 測試覆蓋率", ">90%"),  # v8.1: raised from >80%
             "TH-10": ("測試通過率", "=100%"),
             "TH-11": ("單元測試覆蓋率", "≥70%"),
@@ -178,11 +179,12 @@ PHASE_SPEC = {
              "Phase4_STAGE_PASS.md", True),
         ],
         "thresholds": {
-            "TH-04": ("Security 合規", "≥80%"),  # v8.0 新增
+            "TH-04": ("Constitution 安全性", "=100%"),  # v8.6: align SKILL.md (was Security 合規 ≥80%)
             "TH-05": ("Constitution 可維護性", ">90%"),  # v8.1: raised from >70%
             "TH-06": ("Constitution 測試覆蓋率", ">90%"),  # v8.1: raised from >80%
             "TH-10": ("測試通過率", "=100%"),
             "TH-12": ("單元測試覆蓋率", "≥80%"),
+            "TH-13": ("SRS FR 覆蓋率", "=100%"),  # v8.6: SKILL.md Phase 4-8
             "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
             "TH-17": ("FR ↔ 測試映射率", "≥90%"),  # v6.15 新增
         },
@@ -210,6 +212,8 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-02": ("Constitution 總分", "≥80%"),
             "TH-07": ("邏輯正確性分數", "≥90分"),
+            "TH-12": ("單元測試覆蓋率", "≥80%"),  # v8.6: SKILL.md Phase 4-8
+            "TH-13": ("SRS FR 覆蓋率", "=100%"),  # v8.6: SKILL.md Phase 4-8
             "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
         },
         "min_duration_minutes": 15,
@@ -231,6 +235,8 @@ PHASE_SPEC = {
         "thresholds": {
             "TH-02": ("Constitution 總分", "≥80%"),
             "TH-07": ("邏輯正確性分數", "≥90分"),
+            "TH-12": ("單元測試覆蓋率", "≥80%"),  # v8.6: SKILL.md Phase 4-8
+            "TH-13": ("SRS FR 覆蓋率", "=100%"),  # v8.6: SKILL.md Phase 4-8
             "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
         },
         "min_duration_minutes": 10,
@@ -253,6 +259,8 @@ PHASE_SPEC = {
         ],
         "thresholds": {
             "TH-07": ("邏輯正確性分數", "≥90分"),
+            "TH-12": ("單元測試覆蓋率", "≥80%"),  # v8.6: SKILL.md Phase 4-8
+            "TH-13": ("SRS FR 覆蓋率", "=100%"),  # v8.6: SKILL.md Phase 4-8
             "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
         },
         "min_duration_minutes": 10,
@@ -272,6 +280,8 @@ PHASE_SPEC = {
              "Phase8_STAGE_PASS.md", True),
         ],
         "thresholds": {
+            "TH-12": ("單元測試覆蓋率", "≥80%"),  # v8.6: SKILL.md Phase 4-8
+            "TH-13": ("SRS FR 覆蓋率", "=100%"),  # v8.6: SKILL.md Phase 4-8
             "TH-15": ("Phase Truth", ">90%"),   # v8.1 新增
         },
         "min_duration_minutes": 10,
@@ -2351,7 +2361,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
         f"",
         f"> **專案**：{result.repo}  ",
         f"> **審計時間**：{result.audit_time}  ",
-        f"> **方法論版本**：methodology-v2 v8.1  ",
+        f"> **方法論版本**：methodology-v2 v8.6  ",
         f"> **審計工具**：phase_auditor.py  ",
         f"",
         f"---",
@@ -2443,7 +2453,7 @@ def generate_report(result: AuditResult, output_format: str = "markdown") -> str
     lines += [
         f"",
         f"---",
-        f"*由 phase_auditor.py 自動生成 | methodology-v2 v8.1*",
+        f"*由 phase_auditor.py 自動生成 | methodology-v2 v8.6*",
     ]
 
     return "\n".join(lines)
