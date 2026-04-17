@@ -1,0 +1,172 @@
+name: Sync methodology-v2 → phase_auditor.py
+
+on:
+  schedule:
+    # 每天 UTC 02:00 執行（台灣時間 10:00）
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no push)'
+        required: false
+        default: 'false'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout claude_audit
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Check latest methodology-v2 version tag
+        id: check_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 取得 methodology-v2 最新 tag
+          LATEST_TAG=$(gh api repos/johnnylugm-tech/methodology-v2/tags --jq '.[0].name')
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+          # 取得 phase_auditor.py 目前記錄的版本
+          CURRENT_VER=$(grep -oP 'methodology-v2 v\K[0-9]+\.[0-9]+' phase_auditor.py | head -1 || echo "0.0")
+          echo "current_ver=$CURRENT_VER" >> $GITHUB_OUTPUT
+
+          echo "📌 Latest methodology-v2: $LATEST_TAG"
+          echo "📌 phase_auditor.py currently tracks: v$CURRENT_VER"
+
+          # 若版本相同則跳過
+          if [ "v$CURRENT_VER" = "$LATEST_TAG" ]; then
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+            echo "✅ Already up-to-date, no sync needed."
+          else
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+            echo "🔄 Update needed: v$CURRENT_VER → $LATEST_TAG"
+          fi
+
+      - name: Fetch methodology-v2 SKILL.md at latest tag
+        if: steps.check_version.outputs.needs_update == 'true'
+        id: fetch_skill
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=${{ steps.check_version.outputs.latest_tag }}
+          gh api "repos/johnnylugm-tech/methodology-v2/contents/SKILL.md?ref=$TAG" \
+            --jq '.content' | base64 -d > /tmp/SKILL.md
+          echo "✅ Fetched SKILL.md at $TAG"
+
+      - name: Parse TH thresholds from SKILL.md
+        if: steps.check_version.outputs.needs_update == 'true'
+        id: parse_th
+        run: |
+          python3 << 'PYEOF'
+          import re, json
+
+          with open("/tmp/SKILL.md") as f:
+              skill = f.read()
+
+          # 解析 TH 表格: | TH-XX | 描述 | 值 | Phase |
+          th_pattern = re.compile(
+              r"\| (TH-\d+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|"
+          )
+          thresholds = {}
+          for m in th_pattern.finditer(skill):
+              th_id, desc, val, phases = [x.strip() for x in m.groups()]
+              thresholds[th_id] = {"desc": desc, "val": val, "phases": phases}
+
+          # 解析 HR 規則: | HR-XX | 規則 | 後果 |
+          hr_pattern = re.compile(r"\| (HR-\d+) \| ([^|]+) \| ([^|]+) \|")
+          hr_rules = {}
+          for m in hr_pattern.finditer(skill):
+              hr_id, rule, consequence = [x.strip() for x in m.groups()]
+              hr_rules[hr_id] = {"rule": rule, "consequence": consequence}
+
+          print(f"Parsed {len(thresholds)} TH rules, {len(hr_rules)} HR rules")
+          with open("/tmp/parsed_rules.json", "w") as f:
+              json.dump({"thresholds": thresholds, "hr_rules": hr_rules}, f, ensure_ascii=False, indent=2)
+          PYEOF
+          cat /tmp/parsed_rules.json
+
+      - name: Apply TH updates to phase_auditor.py
+        if: steps.check_version.outputs.needs_update == 'true'
+        id: apply_updates
+        run: |
+          TAG=${{ steps.check_version.outputs.latest_tag }}
+          python3 << 'PYEOF'
+          import re, json
+
+          with open("phase_auditor.py") as f:
+              src = f.read()
+
+          with open("/tmp/parsed_rules.json") as f:
+              rules = json.load(f)
+
+          th = rules["thresholds"]
+          changes = []
+
+          # TH 規格對應表: phase → [applicable TH-IDs]
+          def get_phase_ths(phase):
+              result = []
+              for th_id, info in th.items():
+                  phases_str = info["phases"]
+                  # 解析 "1-8", "3-4", "1", "4-8", etc.
+                  for part in phases_str.split(","):
+                      part = part.strip()
+                      if "-" in part:
+                          a, b = part.split("-")
+                          if int(a.strip()) <= phase <= int(b.strip()):
+                              result.append(th_id)
+                              break
+                      elif part.isdigit() and int(part) == phase:
+                          result.append(th_id)
+                          break
+              return sorted(result)
+
+          # 檢查每個 TH 的值是否與 SKILL.md 一致
+          # 用正則找到 phase_auditor.py 中的 "TH-XX": ("描述", "值")
+          th_in_code = re.findall(r'"(TH-\d+)":\s*\("([^"]*)",\s*"([^"]*)"\)', src)
+          for th_id, desc, val in th_in_code:
+              if th_id in th:
+                  skill_val = th[th_id]["val"].strip()
+                  skill_desc = th[th_id]["desc"].strip()
+                  if val.strip() != skill_val:
+                      changes.append(f"TH value mismatch: {th_id} code={val} skill={skill_val}")
+                  if desc != skill_desc and desc.replace(" ", "") != skill_desc.replace(" ", ""):
+                      changes.append(f"TH desc mismatch: {th_id} code=\"{desc}\" skill=\"{skill_desc}\"")
+
+          with open("/tmp/changes.txt", "w") as f:
+              f.write("\n".join(changes) if changes else "no_changes")
+
+          print("Changes detected:")
+          print("\n".join(changes) if changes else "  None - all TH values match SKILL.md")
+          PYEOF
+
+      - name: Report sync result
+        if: steps.check_version.outputs.needs_update == 'true'
+        run: |
+          echo "## Sync Report" >> $GITHUB_STEP_SUMMARY
+          echo "- methodology-v2: ${{ steps.check_version.outputs.latest_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- phase_auditor currently: v${{ steps.check_version.outputs.current_ver }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Detected Differences:" >> $GITHUB_STEP_SUMMARY
+          cat /tmp/changes.txt >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Manual review required**: If differences found above, update phase_auditor.py manually." >> $GITHUB_STEP_SUMMARY
+
+      - name: Skip notice
+        if: steps.check_version.outputs.needs_update == 'false'
+        run: |
+          echo "## Sync Report" >> $GITHUB_STEP_SUMMARY
+          echo "✅ phase_auditor.py already tracks methodology-v2 ${{ steps.check_version.outputs.latest_tag }}" >> $GITHUB_STEP_SUMMARY
